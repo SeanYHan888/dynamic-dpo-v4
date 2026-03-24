@@ -199,8 +199,7 @@ Do not use quantization by default for:
 
 - smoke runs
 - standard 4x H100 FSDP runs
-
-## Validation Checklist
+- [ ] Validation Checklist
 
 Minimum safe validation after code changes:
 

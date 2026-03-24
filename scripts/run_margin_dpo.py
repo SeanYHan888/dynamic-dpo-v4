@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 # coding=utf-8
 import logging
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from alignment import DataArguments, H4ArgumentParser, ModelArguments, get_peft_config
 from margin_dpo_trainer import MarginDPOTrainer
