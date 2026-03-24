@@ -160,6 +160,8 @@ class BetaDPOTrainer(TokenizedDPOTrainer):
             average_log_prob=False,
         )
         ref_chosen_logps, ref_rejected_logps = self._get_reference_logps(batch, model)
+        ref_chosen_logps = ref_chosen_logps.to(chosen_logps.device)
+        ref_rejected_logps = ref_rejected_logps.to(chosen_logps.device)
 
         logits = (chosen_logps - rejected_logps) - (ref_chosen_logps - ref_rejected_logps)
         r_gap_local = (chosen_logps - ref_chosen_logps - rejected_logps + ref_rejected_logps).detach()

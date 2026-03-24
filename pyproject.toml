@@ -22,6 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ultra = [
+  "ninja==1.11.1.1",
   "flash-attn==2.5.8; platform_system == 'Linux'",
 ]
 deepspeed = [
@@ -34,8 +35,11 @@ dev = [
   "pytest==8.2.1",
 ]
 
+[tool.uv]
+extra-build-variables = { flash-attn = { FLASH_ATTN_CUDA_ARCHS = "90" } }
+
 [tool.uv.extra-build-dependencies]
-flash-attn = ["torch"]
+flash-attn = ["torch", "ninja==1.11.1.1"]
 
 [[tool.uv.dependency-metadata]]
 name = "flash-attn"

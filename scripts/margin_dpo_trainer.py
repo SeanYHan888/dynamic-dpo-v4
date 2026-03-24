@@ -156,6 +156,8 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
             average_log_prob=False,
         )
         ref_chosen_logps, ref_rejected_logps = self._get_reference_logps(batch)
+        ref_chosen_logps = ref_chosen_logps.to(chosen_logps.device)
+        ref_rejected_logps = ref_rejected_logps.to(chosen_logps.device)
 
         margin = (chosen_logps - rejected_logps) - (ref_chosen_logps - ref_rejected_logps)
         self._maybe_log_margin(margin.detach())

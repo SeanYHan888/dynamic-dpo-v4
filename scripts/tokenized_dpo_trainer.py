@@ -449,12 +449,13 @@ class TokenizedDPOTrainer(Trainer):
         batch: Dict[str, Union[List, torch.LongTensor]],
         average_log_prob: bool = False,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.LongTensor]:
+        model_device = self._get_model_device(model)
         concatenated_batch = self.concatenated_inputs(
             batch,
             is_encoder_decoder=self.is_encoder_decoder,
             label_pad_token_id=self.label_pad_token_id,
             padding_value=self.padding_value,
-            device=self.accelerator.device,
+            device=model_device,
         )
         len_chosen = batch["chosen_labels"].shape[0]
 
@@ -489,6 +490,14 @@ class TokenizedDPOTrainer(Trainer):
         chosen_labels = concatenated_batch["concatenated_labels"][:len_chosen]
 
         return chosen_logps, rejected_logps, chosen_logits, rejected_logits, chosen_labels
+
+    @staticmethod
+    def _get_model_device(model: nn.Module) -> Optional[torch.device]:
+        for tensor in model.parameters():
+            return tensor.device
+        for tensor in model.buffers():
+            return tensor.device
+        return None
 
     @staticmethod
     def get_batch_logps(
