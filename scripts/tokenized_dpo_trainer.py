@@ -13,6 +13,7 @@ from accelerate import PartialState
 from accelerate.utils import is_deepspeed_available
 from datasets import Dataset
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 from utils.preprocessing_cache import maybe_prepare_tokenized_datasets
 from transformers import AutoModelForCausalLM, DataCollator, PreTrainedModel, PreTrainedTokenizerBase, Trainer
 from transformers.trainer_callback import TrainerCallback
@@ -179,6 +180,11 @@ class TokenizedDPOTrainer(Trainer):
         self.sft_weight = getattr(args, "sft_weight", 0.0)
         self.label_smoothing = getattr(args, "label_smoothing", 0.0)
         self.loss_type = getattr(args, "loss_type", "sigmoid")
+        self.precompute_ref_logps = bool(
+            getattr(args, "precompute_ref_log_probs", False) or getattr(args, "precompute_ref_logps", False)
+        )
+        self._precomputed_train_ref_logps = False
+        self._precomputed_eval_ref_logps = False
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
 
         with PartialState().local_main_process_first():
@@ -208,7 +214,13 @@ class TokenizedDPOTrainer(Trainer):
             if self.is_deepspeed_enabled:
                 self.ref_model = self._prepare_deepspeed(self.ref_model)
             else:
-                self.ref_model = self.accelerator.prepare_model(self.ref_model, evaluation_mode=True)
+                # Under FSDP, `evaluation_mode=True` skips distributed wrapping and the default
+                # device placement is disabled, so the reference model would otherwise remain on CPU.
+                self.ref_model = self.accelerator.prepare_model(
+                    self.ref_model,
+                    device_placement=True,
+                    evaluation_mode=True,
+                )
 
     def _prepare_deepspeed(self, model: PreTrainedModel):
         deepspeed_plugin = self.accelerator.state.deepspeed_plugin
@@ -232,6 +244,101 @@ class TokenizedDPOTrainer(Trainer):
         model, *_ = deepspeed.initialize(model=model, config=config_kwargs)
         model.eval()
         return model
+
+    @torch.no_grad()
+    def compute_reference_log_probs(
+        self,
+        padded_batch: Dict[str, Union[torch.Tensor, Any]],
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.ref_model is None:
+            raise ValueError("Reference model is required to precompute reference log-probs.")
+
+        ref_chosen_logps, ref_rejected_logps, _, _, _ = self.concatenated_forward(
+            self.ref_model,
+            padded_batch,
+            average_log_prob=False,
+        )
+        return ref_chosen_logps, ref_rejected_logps
+
+    def _precompute_dataset_reference_logps(
+        self,
+        dataset: Dataset,
+        batch_size: int,
+        description: str,
+    ) -> Dataset:
+        dataloader_params = {
+            "batch_size": batch_size,
+            "collate_fn": self.data_collator,
+            "num_workers": self.args.dataloader_num_workers,
+            "pin_memory": self.args.dataloader_pin_memory,
+            "shuffle": False,
+        }
+        data_loader = self.accelerator.prepare(DataLoader(dataset, **dataloader_params))
+
+        reference_chosen_logps = []
+        reference_rejected_logps = []
+        for padded_batch in tqdm(iterable=data_loader, desc=description):
+            ref_chosen_logp, ref_rejected_logp = self.compute_reference_log_probs(padded_batch)
+            ref_chosen_logp, ref_rejected_logp = self.accelerator.gather_for_metrics(
+                (ref_chosen_logp, ref_rejected_logp)
+            )
+            reference_chosen_logps.append(ref_chosen_logp.cpu())
+            reference_rejected_logps.append(ref_rejected_logp.cpu())
+
+            # Reduce allocator pressure before the actual training loop starts.
+            torch.cuda.empty_cache()
+            self.accelerator.free_memory()
+
+        all_reference_chosen_logps = torch.cat(reference_chosen_logps).float().numpy()[: len(dataset)]
+        all_reference_rejected_logps = torch.cat(reference_rejected_logps).float().numpy()[: len(dataset)]
+
+        dataset = dataset.add_column(name="ref_chosen_logps", column=all_reference_chosen_logps)
+        dataset = dataset.add_column(name="ref_rejected_logps", column=all_reference_rejected_logps)
+        return dataset
+
+    def _maybe_release_ref_model(self) -> None:
+        if self.ref_model is None or not self.precompute_ref_logps:
+            return
+
+        if not self._precomputed_train_ref_logps:
+            return
+
+        if self.args.do_eval and not self._precomputed_eval_ref_logps:
+            return
+
+        self.ref_model = None
+        torch.cuda.empty_cache()
+        self.accelerator.free_memory()
+
+    def get_train_dataloader(self) -> DataLoader:
+        if self.precompute_ref_logps and not self._precomputed_train_ref_logps:
+            self.train_dataset = self._precompute_dataset_reference_logps(
+                self.train_dataset,
+                batch_size=self.args.per_device_train_batch_size,
+                description="Train dataset reference log probs",
+            )
+            self._precomputed_train_ref_logps = True
+            self._maybe_release_ref_model()
+
+        return super().get_train_dataloader()
+
+    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+        if eval_dataset is None:
+            raise ValueError("Trainer: evaluation requires an eval_dataset.")
+
+        if self.precompute_ref_logps and not self._precomputed_eval_ref_logps:
+            eval_dataset = self._precompute_dataset_reference_logps(
+                eval_dataset,
+                batch_size=self.args.per_device_eval_batch_size,
+                description="Eval dataset reference log probs",
+            )
+            if self.eval_dataset is not None:
+                self.eval_dataset = eval_dataset
+            self._precomputed_eval_ref_logps = True
+            self._maybe_release_ref_model()
+
+        return super().get_eval_dataloader(eval_dataset=eval_dataset)
 
     def _tokenize_without_max_length_warning(self, text: str, **kwargs) -> Dict[str, List[int]]:
         """Tokenize raw text for custom truncation without emitting misleading max-length warnings."""
@@ -416,7 +523,11 @@ class TokenizedDPOTrainer(Trainer):
                 else:
                     continue
                 concatenated_key = key.replace("chosen", "concatenated")
-                concatenated_batch[concatenated_key] = pad_to_length(batch[key], max_length, pad_value=pad_value)
+                concatenated_batch[concatenated_key] = pad_to_length(
+                    batch[key],
+                    max_length,
+                    pad_value=pad_value,
+                ).to(device=device)
 
         for key in batch:
             if key.startswith("rejected") and isinstance(batch[key], torch.Tensor):
@@ -440,6 +551,9 @@ class TokenizedDPOTrainer(Trainer):
         if is_encoder_decoder:
             concatenated_batch["concatenated_input_ids"] = batch["prompt_input_ids"].repeat(2, 1).to(device=device)
             concatenated_batch["concatenated_attention_mask"] = batch["prompt_attention_mask"].repeat(2, 1).to(device=device)
+        else:
+            for key, value in concatenated_batch.items():
+                concatenated_batch[key] = value.to(device=device)
 
         return concatenated_batch
 
@@ -450,6 +564,8 @@ class TokenizedDPOTrainer(Trainer):
         average_log_prob: bool = False,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.LongTensor]:
         model_device = self._get_model_device(model)
+        if model_device is None or model_device.type == "cpu":
+            model_device = self.accelerator.device
         concatenated_batch = self.concatenated_inputs(
             batch,
             is_encoder_decoder=self.is_encoder_decoder,

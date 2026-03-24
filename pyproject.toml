@@ -39,7 +39,7 @@ dev = [
 extra-build-variables = { flash-attn = { FLASH_ATTN_CUDA_ARCHS = "90" } }
 
 [tool.uv.extra-build-dependencies]
-flash-attn = ["torch", "ninja==1.11.1.1"]
+flash-attn = ["torch==2.3.1", "ninja==1.11.1.1"]
 
 [[tool.uv.dependency-metadata]]
 name = "flash-attn"

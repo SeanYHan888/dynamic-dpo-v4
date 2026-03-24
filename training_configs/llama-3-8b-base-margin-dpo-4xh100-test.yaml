@@ -14,16 +14,15 @@ dataset_num_proc: 4
 use_persistent_hf_cache: true
 hf_cache_dir: null
 
-# Beta-DPO test arguments
+# Margin-DPO test arguments
 bf16: true
 beta: 0.1
-rho: 0.8
-alpha: 0.6
-ema_momentum: 0.9
-beta_min: 1.0e-3
-sync_global_mask: true
-deterministic_eval: true
-require_equal_local_batch_size: true
+require_explicit_ref_model: true
+f_divergence_type: reverse_kl
+f_alpha_divergence_coef: 1.0
+margin_log_path: outputs/llama-3-8b-base-margin-dpo-4xh100-test/margin_logs
+margin_log_steps: 1
+margin_save_full: false
 precompute_ref_log_probs: true
 
 per_device_train_batch_size: 1
@@ -51,8 +50,8 @@ logging_steps: 1
 log_level: info
 max_steps: 50
 
-output_dir: outputs/llama-3-8b-base-beta-dpo-4xh100-test
-run_name: llama-3-8b-base-beta-dpo-4xh100-test
+output_dir: outputs/llama-3-8b-base-margin-dpo-4xh100-test
+run_name: llama-3-8b-base-margin-dpo-4xh100-test
 push_to_hub: false
 save_strategy: "no"
 report_to:
