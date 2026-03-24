@@ -1,11 +1,9 @@
 # Model arguments
-# This path is used for both policy init and frozen reference init in scripts/run_beta_dpo.py.
 model_name_or_path: princeton-nlp/Llama-3-Base-8B-SFT
 torch_dtype: null
 attn_implementation: flash_attention_2
 
 # Data training arguments
-# Keep this at 0.1 for a fast cluster test. Change to 1.0 for a real run.
 dataset_mixer:
   HuggingFaceH4/ultrafeedback_binarized: 0.1
 dataset_splits:
@@ -25,10 +23,6 @@ sync_global_mask: true
 deterministic_eval: true
 require_equal_local_batch_size: true
 
-# Important: beta-DPO's filtering/beta adaptation happens at the gathered forward batch,
-# not at the optimizer-step batch. On 4 GPUs, this config means:
-#   algorithmic batch = per_device_train_batch_size * 4 = 4
-#   optimizer batch   = algorithmic batch * gradient_accumulation_steps = 128
 per_device_train_batch_size: 1
 per_device_eval_batch_size: 1
 gradient_accumulation_steps: 32
