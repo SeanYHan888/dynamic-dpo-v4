@@ -5,7 +5,7 @@ attn_implementation: flash_attention_2
 
 # Data training arguments
 dataset_mixer:
-  HuggingFaceH4/ultrafeedback_binarized: 1.0
+  HuggingFaceH4/ultrafeedback_binarized: 0.1
 dataset_splits:
   - train_prefs
   - test_prefs
@@ -45,19 +45,16 @@ max_prompt_length: 1792
 reuse_tokenized_dataset: true
 tokenized_dataset_cache_dir: null
 
-do_eval: true
-evaluation_strategy: steps
-eval_steps: 200
+do_eval: false
+evaluation_strategy: "no"
 logging_steps: 10
 log_level: info
 num_train_epochs: 1
 
-output_dir: outputs/llama-3-8b-base-beta-dpo-4gpu-first-real-run
-run_name: llama-3-8b-base-beta-dpo-4gpu-first-real-run
-push_to_hub: true
-save_strategy: steps
-save_steps: 1000000
-save_total_limit: 20
+output_dir: outputs/llama-3-8b-base-beta-dpo-4gpu-pre-first-real-run
+run_name: llama-3-8b-base-beta-dpo-4gpu-pre-first-real-run
+push_to_hub: false
+save_strategy: "no"
 report_to:
   - wandb
 seed: 42
