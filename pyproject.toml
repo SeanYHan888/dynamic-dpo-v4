@@ -1,6 +1,6 @@
 [project]
 name = "dynamic-dpo-v4"
-version = "0.1.0"
+version = "0.1.1"
 requires-python = ">=3.10,<3.12"
 dependencies = [
   "torch==2.3.1",
@@ -9,6 +9,7 @@ dependencies = [
   "accelerate==0.34.2",
   "trl==0.10.1",
   "huggingface_hub==0.24.6",
+  "hf-transfer==0.1.6",
   "safetensors==0.4.5",
   "sentencepiece==0.2.0",
   "numpy==1.26.4",

@@ -30,6 +30,10 @@ from .configs import DataArguments, DPOConfig, ModelArguments, SFTConfig
 from .data import DEFAULT_CHAT_TEMPLATE
 
 
+# Enable parallel Hub downloads by default when hf_transfer is installed.
+os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+
+
 def get_current_device() -> int:
     """Get the current device. For GPU we return the local process index to enable multiple GPU training."""
     return Accelerator().local_process_index if torch.cuda.is_available() else "cpu"

@@ -18,6 +18,15 @@ uv sync
 ```
 
 `wandb` is part of the standard dependency set, so a plain `uv sync` installs it.
+`hf-transfer` is also installed by default, and the codebase enables `HF_HUB_ENABLE_HF_TRANSFER=1` automatically so Hub downloads use parallel transfer by default.
+
+If you are preparing for a real Linux H100 run with FlashAttention 2, use:
+
+```bash
+uv sync --extra ultra
+```
+
+The `ultra` extra installs `flash-attn==2.5.8` and is Linux-only.
 
 If you are using Hugging Face Hub or Weights & Biases, make sure you are already authenticated in the shell environment where you launch runs.
 
@@ -60,6 +69,7 @@ Use single GPU first. The goal is to verify:
 - forward/backward starts successfully
 
 For smoke runs, prefer `sdpa` instead of FlashAttention to reduce runtime complexity.
+Parallel Hub download is already enabled by default after `uv sync`.
 
 #### Beta-DPO smoke run
 
@@ -136,6 +146,14 @@ For real training on 4 H100s, use `accelerate` with the FSDP config and override
 The checked-in [accelerate_configs/fsdp.yaml](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/accelerate_configs/fsdp.yaml) has `num_processes: 8`, so pass `--num_processes=4` explicitly for a 4-GPU run.
 
 For real runs, keeping `flash_attention_2` is reasonable on H100 unless you are debugging environment issues.
+
+Before a real H100 FSDP run on Linux, install FlashAttention 2 with:
+
+```bash
+uv sync --extra ultra
+```
+
+That command keeps the default parallel download behavior and adds FlashAttention 2 on top.
 
 ### Beta-DPO FSDP run
 

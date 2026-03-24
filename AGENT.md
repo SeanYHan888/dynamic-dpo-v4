@@ -24,6 +24,7 @@ uv sync
 ```
 
 `wandb` is part of the standard dependency set.
+`hf-transfer` is also part of the standard dependency set, and the repo enables `HF_HUB_ENABLE_HF_TRANSFER=1` by default through the shared model-loading path.
 
 Optional extras:
 
