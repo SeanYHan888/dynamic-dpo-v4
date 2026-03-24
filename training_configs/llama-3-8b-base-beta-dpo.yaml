@@ -15,7 +15,7 @@ dataset_num_proc: 12
 # Beta-DPO trainer arguments
 bf16: true
 beta: 0.1
-rho: 0.2
+rho: 0.8
 alpha: 0.6
 ema_momentum: 0.9
 beta_min: 1.0e-3
@@ -30,7 +30,7 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
 hub_model_id: beta-dpo-exps
-learning_rate: 1.0e-6
+learning_rate: 5.0e-7
 log_level: info
 logging_steps: 10
 lr_scheduler_type: linear
@@ -49,4 +49,4 @@ report_to:
   - wandb
 save_total_limit: 20
 seed: 42
-warmup_ratio: 0.1
+warmup_ratio: 0.05

@@ -15,7 +15,7 @@ dataset_num_proc: 2
 # Beta-DPO smoke arguments
 bf16: true
 beta: 0.1
-rho: 0.2
+rho: 0.8
 alpha: 0.6
 ema_momentum: 0.9
 beta_min: 1.0e-3
