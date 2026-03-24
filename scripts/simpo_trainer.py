@@ -77,6 +77,7 @@ class SimPOTrainer(Trainer):
     """
 
     _tag_names = ["trl", "simpo"]
+    _LONG_SEQUENCE_WARNING_KEY = "sequence-length-is-longer-than-the-specified-maximum"
 
     def __init__(
         self,
@@ -302,8 +303,8 @@ class SimPOTrainer(Trainer):
             https://github.com/EleutherAI/lm-evaluation-harness/pull/531#issuecomment-1595586257
         """
 
-        full_tokenized = self.tokenizer(prompt + answer, add_special_tokens=False)
-        prompt_input_ids = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        full_tokenized = self._tokenize_without_max_length_warning(prompt + answer, add_special_tokens=False)
+        prompt_input_ids = self._tokenize_without_max_length_warning(prompt, add_special_tokens=False)["input_ids"]
 
         answer_input_ids = full_tokenized["input_ids"][len(prompt_input_ids) :]
         answer_attention_mask = full_tokenized["attention_mask"][len(prompt_input_ids) :]
@@ -344,6 +345,15 @@ class SimPOTrainer(Trainer):
             attention_mask=answer_attention_mask,
         )
 
+    def _tokenize_without_max_length_warning(self, text: str, **kwargs) -> Dict[str, List[int]]:
+        """Tokenize raw text for custom truncation without emitting misleading max-length warnings."""
+        previous = self.tokenizer.deprecation_warnings.get(self._LONG_SEQUENCE_WARNING_KEY, False)
+        self.tokenizer.deprecation_warnings[self._LONG_SEQUENCE_WARNING_KEY] = True
+        try:
+            return self.tokenizer(text, **kwargs)
+        finally:
+            self.tokenizer.deprecation_warnings[self._LONG_SEQUENCE_WARNING_KEY] = previous
+
     def tokenize_row(self, feature, model: Optional[Union[PreTrainedModel, nn.Module]] = None) -> Dict:
         """Tokenize a single row from a SimPO specific dataset.
 
@@ -368,7 +378,7 @@ class SimPOTrainer(Trainer):
 
             if not isinstance(prompt, str):
                 raise ValueError(f"prompt should be an str but got {type(prompt)}")
-            prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)
+            prompt_tokens = self._tokenize_without_max_length_warning(prompt, add_special_tokens=False)
             prompt_tokens = {f"prompt_{k}": v for k, v in prompt_tokens.items()}
 
             if not isinstance(chosen, str):

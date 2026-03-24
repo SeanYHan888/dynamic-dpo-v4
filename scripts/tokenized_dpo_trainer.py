@@ -39,6 +39,7 @@ if is_deepspeed_available():
 
 class TokenizedDPOTrainer(Trainer):
     _tag_names = ["trl"]
+    _LONG_SEQUENCE_WARNING_KEY = "sequence-length-is-longer-than-the-specified-maximum"
 
     def __init__(
         self,
@@ -233,9 +234,18 @@ class TokenizedDPOTrainer(Trainer):
         model.eval()
         return model
 
+    def _tokenize_without_max_length_warning(self, text: str, **kwargs) -> Dict[str, List[int]]:
+        """Tokenize raw text for custom truncation without emitting misleading max-length warnings."""
+        previous = self.tokenizer.deprecation_warnings.get(self._LONG_SEQUENCE_WARNING_KEY, False)
+        self.tokenizer.deprecation_warnings[self._LONG_SEQUENCE_WARNING_KEY] = True
+        try:
+            return self.tokenizer(text, **kwargs)
+        finally:
+            self.tokenizer.deprecation_warnings[self._LONG_SEQUENCE_WARNING_KEY] = previous
+
     def build_tokenized_answer(self, prompt, answer):
-        full_tokenized = self.tokenizer(prompt + answer, add_special_tokens=False)
-        prompt_input_ids = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        full_tokenized = self._tokenize_without_max_length_warning(prompt + answer, add_special_tokens=False)
+        prompt_input_ids = self._tokenize_without_max_length_warning(prompt, add_special_tokens=False)["input_ids"]
 
         answer_input_ids = full_tokenized["input_ids"][len(prompt_input_ids) :]
         answer_attention_mask = full_tokenized["attention_mask"][len(prompt_input_ids) :]
@@ -274,7 +284,7 @@ class TokenizedDPOTrainer(Trainer):
         if not self.is_encoder_decoder:
             if not isinstance(prompt, str):
                 raise ValueError(f"prompt should be an str but got {type(prompt)}")
-            prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)
+            prompt_tokens = self._tokenize_without_max_length_warning(prompt, add_special_tokens=False)
             prompt_tokens = {f"prompt_{k}": v for k, v in prompt_tokens.items()}
 
             if not isinstance(chosen, str):
