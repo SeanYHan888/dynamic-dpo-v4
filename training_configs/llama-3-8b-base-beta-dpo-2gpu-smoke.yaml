@@ -1,6 +1,6 @@
 # Model arguments
 model_name_or_path: princeton-nlp/Llama-3-Base-8B-SFT
-torch_dtype: null
+torch_dtype: auto
 attn_implementation: flash_attention_2
 
 # Data training arguments
@@ -18,7 +18,7 @@ hf_cache_dir: null
 bf16: true
 beta: 0.1
 rho: 1.0
-alpha: 0.6
+alpha: 0.01
 ema_momentum: 0.9
 beta_min: 1.0e-3
 sync_global_mask: true
@@ -46,7 +46,7 @@ reuse_tokenized_dataset: true
 tokenized_dataset_cache_dir: null
 
 do_eval: false
-evaluation_strategy: "no"
+eval_strategy: "no"
 logging_steps: 1
 log_level: info
 max_steps: 50
@@ -55,6 +55,5 @@ output_dir: outputs/llama-3-8b-base-beta-dpo-2gpu-smoke
 run_name: llama-3-8b-base-beta-dpo-2gpu-smoke
 push_to_hub: false
 save_strategy: "no"
-report_to:
-  - wandb
+report_to: []
 seed: 42
