@@ -10,6 +10,7 @@ dataset_splits:
   - train_prefs
   - test_prefs
 preprocessing_num_workers: 2
+preprocessing_mode: new
 dataset_num_proc: 2
 use_persistent_hf_cache: false
 hf_cache_dir: null

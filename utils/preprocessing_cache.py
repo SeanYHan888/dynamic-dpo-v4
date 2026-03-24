@@ -62,22 +62,6 @@ def configure_persistent_hf_cache(data_args, run_logger) -> Optional[str]:
     datasets_config.HF_DATASETS_CACHE = str(cache_dir)
     run_logger.info(f"Using persistent HF datasets cache at {cache_dir}")
     return str(cache_dir)
-
-
-def build_prompt_preprocessing_metadata(tokenizer, data_args, prompt_format_fn) -> Dict[str, Any]:
-    active_chat_template = tokenizer.chat_template
-    if active_chat_template is None:
-        active_chat_template = getattr(tokenizer, "default_chat_template", None)
-
-    return {
-        "tokenizer_name_or_path": getattr(tokenizer, "name_or_path", None),
-        "tokenizer_class": tokenizer.__class__.__name__,
-        "active_chat_template": active_chat_template,
-        "auto_insert_empty_system_msg": getattr(data_args, "auto_insert_empty_system_msg", True),
-        "prompt_format_function_hash": _callable_source_hash(prompt_format_fn),
-    }
-
-
 def attach_prompt_preprocessing_metadata(training_args, metadata: Dict[str, Any]) -> None:
     setattr(training_args, "prompt_preprocessing_metadata", metadata)
 
@@ -198,6 +182,8 @@ def _build_tokenized_manifest(trainer, args, dataset: Dataset, split_name: str) 
         "dataset_columns": list(dataset.column_names),
         "code_hashes": code_hashes,
         "effective_tokenization_code_hash": _stable_hash(code_hashes),
+        "preprocessing_mode": prompt_metadata.get("preprocessing_mode"),
+        "preprocessing_style_identifier": prompt_metadata.get("preprocessing_style_identifier"),
     }
     return manifest
 

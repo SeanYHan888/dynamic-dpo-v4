@@ -7,57 +7,15 @@ import torch
 import transformers
 from utils.preprocessing_cache import (
     attach_prompt_preprocessing_metadata,
-    build_prompt_preprocessing_metadata,
     configure_persistent_hf_cache,
 )
+from utils.preference_preprocessing_modes import build_preprocessing_metadata, prepare_preference_dataset_texts
 from transformers import set_seed
 
 from alignment import get_checkpoint, get_datasets, get_kbit_device_map, get_quantization_config, get_tokenizer
-from alignment.data import is_openai_format, maybe_insert_system_message
 
 logger = logging.getLogger(__name__)
-
-MISTRAL_CHAT_TEMPLATE = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'].strip() + '\n\n' %}{% else %}{% set loop_messages = messages %}{% set system_message = '' %}{% endif %}{% for message in loop_messages %}{% if loop.index0 == 0 %}{% set content = system_message + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}"
 PREFERENCE_COLUMNS = ["messages", "chosen", "rejected", "prompt", "completion", "label"]
-
-
-def apply_preference_chat_template(
-    example,
-    tokenizer,
-    auto_insert_empty_system_msg: bool = True,
-    change_template=None,
-):
-    if change_template == "mistral":
-        tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
-
-    if not all(key in example.keys() for key in ("chosen", "rejected")):
-        raise ValueError(
-            "Could not format example as dialogue for preference training; expected either "
-            "`[chosen, rejected]` or `[prompt, chosen, rejected]`."
-        )
-    if not is_openai_format(example["chosen"]) or not is_openai_format(example["rejected"]):
-        raise ValueError("Preference training expects OpenAI-style message dictionaries.")
-
-    if "prompt" in example and is_openai_format(example["prompt"]):
-        prompt_messages = example["prompt"]
-        chosen_messages = example["chosen"]
-        rejected_messages = example["rejected"]
-    else:
-        prompt_messages = example["chosen"][:-1]
-        chosen_messages = example["chosen"][-1:]
-        rejected_messages = example["rejected"][-1:]
-
-    if auto_insert_empty_system_msg:
-        maybe_insert_system_message(prompt_messages, tokenizer)
-
-    example["text_prompt"] = tokenizer.apply_chat_template(prompt_messages, tokenize=False)
-    example["text_chosen"] = tokenizer.apply_chat_template(chosen_messages, tokenize=False)
-    if tokenizer.bos_token and example["text_chosen"].startswith(tokenizer.bos_token):
-        example["text_chosen"] = example["text_chosen"][len(tokenizer.bos_token) :]
-    example["text_rejected"] = tokenizer.apply_chat_template(rejected_messages, tokenize=False)
-    if tokenizer.bos_token and example["text_rejected"].startswith(tokenizer.bos_token):
-        example["text_rejected"] = example["text_rejected"][len(tokenizer.bos_token) :]
-    return example
 
 
 def setup_run(model_args, data_args, training_args, run_logger):
@@ -99,33 +57,23 @@ def prepare_preference_datasets(model_args, data_args, training_args, run_logger
 
     data_args.truncation_side = "left"
     tokenizer = get_tokenizer(model_args, data_args)
-    change_template = "mistral" if "mistral" in model_args.model_name_or_path.lower() else None
-    if change_template == "mistral":
-        tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
     attach_prompt_preprocessing_metadata(
         training_args,
-        build_prompt_preprocessing_metadata(tokenizer, data_args, apply_preference_chat_template),
+        build_preprocessing_metadata(tokenizer, data_args, model_args),
     )
 
-    raw_datasets = raw_datasets.map(
-        apply_preference_chat_template,
-        fn_kwargs={
-            "tokenizer": tokenizer,
-            "auto_insert_empty_system_msg": data_args.auto_insert_empty_system_msg,
-            "change_template": change_template,
-        },
-        num_proc=data_args.preprocessing_num_workers,
-        remove_columns=column_names,
-        desc="Formatting comparisons with prompt template",
+    raw_datasets = prepare_preference_dataset_texts(
+        raw_datasets=raw_datasets,
+        tokenizer=tokenizer,
+        data_args=data_args,
+        model_args=model_args,
+        column_names=column_names,
+        run_logger=run_logger,
     )
-
-    for split in raw_datasets.keys():
-        raw_datasets[split] = raw_datasets[split].rename_columns(
-            {"text_prompt": "prompt", "text_chosen": "chosen", "text_rejected": "rejected"}
-        )
 
     if "train" in raw_datasets:
         sample_count = min(3, len(raw_datasets["train"]))
+        run_logger.info(f"Preprocessing mode: {data_args.preprocessing_mode}")
         for index in random.sample(range(len(raw_datasets["train"])), sample_count):
             run_logger.info(f"Prompt sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['prompt']}")
             run_logger.info(f"Chosen sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['chosen']}")

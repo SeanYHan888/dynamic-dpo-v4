@@ -223,6 +223,10 @@ class DataArguments:
         default=None,
         metadata={"help": "The number of processes to use for the preprocessing."},
     )
+    preprocessing_mode: str = field(
+        default="new",
+        metadata={"help": "Preference preprocessing mode to use. One of ['new', 'original_beta_dpo']."},
+    )
     use_persistent_hf_cache: bool = field(
         default=False,
         metadata={"help": "Whether to use a persistent repo-local Hugging Face datasets cache directory."},
@@ -242,6 +246,10 @@ class DataArguments:
             )
         },
     )
+
+    def __post_init__(self):
+        if self.preprocessing_mode not in {"new", "original_beta_dpo"}:
+            raise ValueError("preprocessing_mode must be one of {'new', 'original_beta_dpo'}.")
 
 
 @dataclass
