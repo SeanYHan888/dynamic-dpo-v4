@@ -13,6 +13,7 @@ from accelerate import PartialState
 from accelerate.utils import is_deepspeed_available
 from datasets import Dataset
 from torch.utils.data import DataLoader
+from utils.preprocessing_cache import maybe_prepare_tokenized_datasets
 from transformers import AutoModelForCausalLM, DataCollator, PreTrainedModel, PreTrainedTokenizerBase, Trainer
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import EvalLoopOutput
@@ -181,9 +182,7 @@ class TokenizedDPOTrainer(Trainer):
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
 
         with PartialState().local_main_process_first():
-            train_dataset = train_dataset.map(self.tokenize_row, num_proc=args.dataset_num_proc)
-            if eval_dataset is not None:
-                eval_dataset = eval_dataset.map(self.tokenize_row, num_proc=args.dataset_num_proc)
+            train_dataset, eval_dataset = maybe_prepare_tokenized_datasets(self, args, train_dataset, eval_dataset)
 
         super().__init__(
             model=model,

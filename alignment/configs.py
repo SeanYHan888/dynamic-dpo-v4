@@ -223,6 +223,14 @@ class DataArguments:
         default=None,
         metadata={"help": "The number of processes to use for the preprocessing."},
     )
+    use_persistent_hf_cache: bool = field(
+        default=False,
+        metadata={"help": "Whether to use a persistent repo-local Hugging Face datasets cache directory."},
+    )
+    hf_cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional override for the persistent Hugging Face datasets cache directory."},
+    )
     truncation_side: Optional[str] = field(
         default=None, metadata={"help": "Truncation side to use for the tokenizer."}
     )

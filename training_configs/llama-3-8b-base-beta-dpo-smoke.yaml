@@ -11,6 +11,8 @@ dataset_splits:
   - test_prefs
 preprocessing_num_workers: 2
 dataset_num_proc: 2
+use_persistent_hf_cache: false
+hf_cache_dir: null
 
 # Beta-DPO smoke arguments
 bf16: true
@@ -33,6 +35,8 @@ logging_steps: 1
 lr_scheduler_type: linear
 max_length: 2048
 max_prompt_length: 1792
+reuse_tokenized_dataset: false
+tokenized_dataset_cache_dir: null
 max_steps: 20
 optim: rmsprop
 output_dir: outputs/llama-3-8b-base-beta-dpo-smoke

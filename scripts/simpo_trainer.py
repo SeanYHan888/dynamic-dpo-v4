@@ -16,6 +16,7 @@ from datasets import Dataset
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, DataCollator, PreTrainedModel, PreTrainedTokenizerBase, Trainer
 from trl.trainer import CPOTrainer
+from utils.preprocessing_cache import maybe_prepare_tokenized_datasets
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import EvalLoopOutput
 from transformers.utils import is_torch_fx_proxy
@@ -267,10 +268,7 @@ class SimPOTrainer(Trainer):
         # Compute that only on the main process for faster data processing.
         # see: https://github.com/huggingface/trl/pull/1255
         with PartialState().local_main_process_first():
-            # tokenize the dataset
-            train_dataset = train_dataset.map(self.tokenize_row, num_proc=args.dataset_num_proc)
-            if eval_dataset is not None:
-                eval_dataset = eval_dataset.map(self.tokenize_row, num_proc=args.dataset_num_proc)
+            train_dataset, eval_dataset = maybe_prepare_tokenized_datasets(self, args, train_dataset, eval_dataset)
 
         super().__init__(
             model=model,

@@ -8,6 +8,8 @@ from alignment import DPOConfig
 class TokenizedPreferenceConfig(DPOConfig):
     model_init_kwargs: Optional[Dict[str, Any]] = field(default=None, repr=False)
     dataset_num_proc: Optional[int] = field(default=None)
+    reuse_tokenized_dataset: bool = field(default=False)
+    tokenized_dataset_cache_dir: Optional[str] = field(default=None)
     disable_dropout: bool = field(default=True)
     generate_during_eval: bool = field(default=False)
     sft_weight: float = field(default=0.0)

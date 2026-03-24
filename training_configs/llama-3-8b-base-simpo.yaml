@@ -10,6 +10,8 @@ dataset_splits:
   - train_prefs
   - test_prefs
 preprocessing_num_workers: 12
+use_persistent_hf_cache: false
+hf_cache_dir: null
 
 # SimPOTrainer arguments
 bf16: true
@@ -29,6 +31,8 @@ logging_steps: 5
 lr_scheduler_type: cosine
 max_length: 2048
 max_prompt_length: 1800
+reuse_tokenized_dataset: false
+tokenized_dataset_cache_dir: null
 num_train_epochs: 1
 optim: adamw_torch
 output_dir: outputs/llama-3-8b-base-simpo

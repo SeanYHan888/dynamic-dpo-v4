@@ -5,6 +5,11 @@ from typing import Iterable
 
 import torch
 import transformers
+from utils.preprocessing_cache import (
+    attach_prompt_preprocessing_metadata,
+    build_prompt_preprocessing_metadata,
+    configure_persistent_hf_cache,
+)
 from transformers import set_seed
 
 from alignment import get_checkpoint, get_datasets, get_kbit_device_map, get_quantization_config, get_tokenizer
@@ -80,6 +85,7 @@ def setup_run(model_args, data_args, training_args, run_logger):
 
 
 def prepare_preference_datasets(model_args, data_args, training_args, run_logger):
+    configure_persistent_hf_cache(data_args, run_logger)
     raw_datasets = get_datasets(
         data_args,
         splits=data_args.dataset_splits,
@@ -94,6 +100,12 @@ def prepare_preference_datasets(model_args, data_args, training_args, run_logger
     data_args.truncation_side = "left"
     tokenizer = get_tokenizer(model_args, data_args)
     change_template = "mistral" if "mistral" in model_args.model_name_or_path.lower() else None
+    if change_template == "mistral":
+        tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
+    attach_prompt_preprocessing_metadata(
+        training_args,
+        build_prompt_preprocessing_metadata(tokenizer, data_args, apply_preference_chat_template),
+    )
 
     raw_datasets = raw_datasets.map(
         apply_preference_chat_template,

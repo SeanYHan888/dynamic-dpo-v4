@@ -11,6 +11,8 @@ dataset_splits:
   - test_prefs
 preprocessing_num_workers: 4
 dataset_num_proc: 4
+use_persistent_hf_cache: true
+hf_cache_dir: null
 
 # Beta-DPO test arguments
 bf16: true
@@ -39,6 +41,8 @@ optim: rmsprop
 
 max_length: 2048
 max_prompt_length: 1792
+reuse_tokenized_dataset: true
+tokenized_dataset_cache_dir: null
 
 do_eval: false
 evaluation_strategy: "no"
