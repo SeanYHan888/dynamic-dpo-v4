@@ -53,7 +53,7 @@ num_train_epochs: 1
 
 output_dir: outputs/llama-3-8b-base-beta-dpo-4gpu-pre-first-real-run
 run_name: llama-3-8b-base-beta-dpo-4gpu-pre-first-real-run
-push_to_hub: false
+push_to_hub: true
 save_strategy: "no"
 report_to:
   - wandb
