@@ -1,14 +1,13 @@
 # Model arguments
 model_name_or_path: princeton-nlp/Llama-3-Base-8B-SFT
 torch_dtype: null
-attn_implementation: flash_attention_2
+attn_implementation: sdpa
 
 # Data training arguments
 dataset_mixer:
   HuggingFaceH4/ultrafeedback_binarized: 1.0
 dataset_splits:
   - train_prefs
-  - test_prefs
 preprocessing_num_workers: 12
 dataset_num_proc: 12
 use_persistent_hf_cache: true
@@ -42,14 +41,13 @@ optim: rmsprop
 
 max_length: 2048
 max_prompt_length: 1792
-tokenization_mode: online
+tokenization_mode: reuse_only
 tokenization_batch_size: 64
 reuse_tokenized_dataset: true
 tokenized_dataset_cache_dir: null
 
-do_eval: true
-evaluation_strategy: steps
-eval_steps: 200
+do_eval: false
+evaluation_strategy: "no"
 logging_steps: 10
 log_level: info
 num_train_epochs: 1
@@ -57,8 +55,7 @@ num_train_epochs: 1
 output_dir: outputs/llama-3-8b-base-beta-dpo-4gpu-first-real-run
 run_name: llama-3-8b-base-beta-dpo-4gpu-first-real-run
 push_to_hub: true
-save_strategy: steps
-save_steps: 1000000
+save_strategy: "no"
 save_total_limit: 20
 report_to:
   - wandb
