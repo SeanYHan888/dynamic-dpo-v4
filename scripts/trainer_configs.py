@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from alignment import DPOConfig
 
@@ -8,6 +8,8 @@ from alignment import DPOConfig
 class TokenizedPreferenceConfig(DPOConfig):
     model_init_kwargs: Optional[Dict[str, Any]] = field(default=None, repr=False)
     dataset_num_proc: Optional[int] = field(default=None)
+    tokenization_mode: Literal["online", "offline_only", "reuse_only"] = field(default="online")
+    tokenization_batch_size: int = field(default=64)
     reuse_tokenized_dataset: bool = field(default=False)
     tokenized_dataset_cache_dir: Optional[str] = field(default=None)
     disable_dropout: bool = field(default=True)
@@ -23,6 +25,13 @@ class TokenizedPreferenceConfig(DPOConfig):
     label_pad_token_id: int = field(default=-100)
     padding_value: Optional[int] = field(default=None)
     is_encoder_decoder: Optional[bool] = field(default=None)
+
+    def __post_init__(self):
+        if self.tokenization_mode not in {"online", "offline_only", "reuse_only"}:
+            raise ValueError("tokenization_mode must be one of {'online', 'offline_only', 'reuse_only'}.")
+        if self.tokenization_batch_size <= 0:
+            raise ValueError("tokenization_batch_size must be > 0.")
+        super().__post_init__()
 
 
 @dataclass

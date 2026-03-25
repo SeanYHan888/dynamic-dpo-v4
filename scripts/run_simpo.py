@@ -22,12 +22,13 @@ def main():
 
     setup_run(model_args, data_args, training_args, logger)
     raw_datasets, tokenizer = prepare_preference_datasets(model_args, data_args, training_args, logger)
+    eval_dataset = raw_datasets["test"] if training_args.do_eval and "test" in raw_datasets else None
 
     trainer = SimPOTrainer(
         model=model_args.model_name_or_path,
         args=training_args,
         train_dataset=raw_datasets["train"],
-        eval_dataset=raw_datasets["test"],
+        eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         peft_config=get_peft_config(model_args),
     )

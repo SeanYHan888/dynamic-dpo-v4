@@ -41,6 +41,8 @@ optim: rmsprop
 
 max_length: 2048
 max_prompt_length: 1792
+tokenization_mode: online
+tokenization_batch_size: 64
 reuse_tokenized_dataset: true
 tokenized_dataset_cache_dir: null
 

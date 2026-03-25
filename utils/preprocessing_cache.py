@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -83,16 +84,19 @@ def attach_prompt_preprocessing_metadata(training_args, metadata: Dict[str, Any]
 
 
 def maybe_prepare_tokenized_datasets(trainer, args, train_dataset, eval_dataset):
-    if not getattr(args, "reuse_tokenized_dataset", False):
-        train_dataset = train_dataset.map(trainer.tokenize_row, num_proc=args.dataset_num_proc)
+    tokenization_mode = getattr(args, "tokenization_mode", "online")
+    reuse_tokenized_dataset = bool(getattr(args, "reuse_tokenized_dataset", False))
+
+    if tokenization_mode == "online" and not reuse_tokenized_dataset:
+        train_dataset = _tokenize_dataset(trainer, args, train_dataset, "train")
         if eval_dataset is not None:
             if isinstance(eval_dataset, dict):
                 eval_dataset = {
-                    split_name: split_dataset.map(trainer.tokenize_row, num_proc=args.dataset_num_proc)
+                    split_name: _tokenize_dataset(trainer, args, split_dataset, split_name)
                     for split_name, split_dataset in eval_dataset.items()
                 }
             else:
-                eval_dataset = eval_dataset.map(trainer.tokenize_row, num_proc=args.dataset_num_proc)
+                eval_dataset = _tokenize_dataset(trainer, args, eval_dataset, "test")
         return train_dataset, eval_dataset
 
     cache_root = _resolve_repo_cache_dir(getattr(args, "tokenized_dataset_cache_dir", None), DEFAULT_TOKENIZED_CACHE_SUBDIR)
@@ -104,6 +108,7 @@ def maybe_prepare_tokenized_datasets(trainer, args, train_dataset, eval_dataset)
         dataset=train_dataset,
         split_name="train",
         cache_root=cache_root,
+        tokenization_mode=tokenization_mode,
     )
     if eval_dataset is not None:
         if isinstance(eval_dataset, dict):
@@ -114,6 +119,7 @@ def maybe_prepare_tokenized_datasets(trainer, args, train_dataset, eval_dataset)
                     dataset=split_dataset,
                     split_name=split_name,
                     cache_root=cache_root,
+                    tokenization_mode=tokenization_mode,
                 )
                 for split_name, split_dataset in eval_dataset.items()
             }
@@ -124,11 +130,19 @@ def maybe_prepare_tokenized_datasets(trainer, args, train_dataset, eval_dataset)
                 dataset=eval_dataset,
                 split_name="test",
                 cache_root=cache_root,
+                tokenization_mode=tokenization_mode,
             )
     return train_dataset, eval_dataset
 
 
-def _maybe_prepare_single_tokenized_split(trainer, args, dataset: Dataset, split_name: str, cache_root: Path) -> Dataset:
+def _maybe_prepare_single_tokenized_split(
+    trainer,
+    args,
+    dataset: Dataset,
+    split_name: str,
+    cache_root: Path,
+    tokenization_mode: str,
+) -> Dataset:
     manifest = _build_tokenized_manifest(trainer=trainer, args=args, dataset=dataset, split_name=split_name)
     manifest_hash = _stable_hash(manifest)
     split_root = cache_root / manifest["trainer_type"] / split_name
@@ -152,7 +166,13 @@ def _maybe_prepare_single_tokenized_split(trainer, args, dataset: Dataset, split
     else:
         LOGGER.info(f"tokenized cache miss for {split_name}; building {split_dir}")
 
-    tokenized_dataset = dataset.map(trainer.tokenize_row, num_proc=args.dataset_num_proc)
+    if tokenization_mode == "reuse_only":
+        raise FileNotFoundError(
+            f"Tokenized cache for split '{split_name}' was not found or was stale at {split_dir}. "
+            "Run the offline pretokenization job first or switch tokenization_mode back to 'online'."
+        )
+
+    tokenized_dataset = _tokenize_dataset(trainer, args, dataset, split_name)
     split_dir.mkdir(parents=True, exist_ok=True)
     tokenized_dataset.save_to_disk(str(dataset_dir))
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
@@ -168,11 +188,16 @@ def _build_tokenized_manifest(trainer, args, dataset: Dataset, split_name: str) 
     if active_chat_template is None:
         active_chat_template = getattr(tokenizer, "default_chat_template", None)
 
-    code_hashes = {
-        "tokenize_row": _callable_source_hash(trainer.tokenize_row),
-        "build_tokenized_answer": _callable_source_hash(trainer.build_tokenized_answer),
-        "prompt_formatting": prompt_metadata.get("prompt_format_function_hash"),
-    }
+    tokenization_code_hashes = getattr(trainer, "get_tokenization_code_hashes", None)
+    if callable(tokenization_code_hashes):
+        raw_code_hashes = tokenization_code_hashes()
+        code_hashes = {name: _stable_hash({"source": source}) for name, source in raw_code_hashes.items()}
+    else:
+        code_hashes = {
+            "tokenize_row": _callable_source_hash(trainer.tokenize_row),
+            "build_tokenized_answer": _callable_source_hash(trainer.build_tokenized_answer),
+        }
+    code_hashes["prompt_formatting"] = prompt_metadata.get("prompt_format_function_hash")
 
     manifest = {
         "trainer_type": getattr(args, "trainer_type", trainer.__class__.__name__),
@@ -200,6 +225,20 @@ def _build_tokenized_manifest(trainer, args, dataset: Dataset, split_name: str) 
         "effective_tokenization_code_hash": _stable_hash(code_hashes),
     }
     return manifest
+
+
+def _tokenize_dataset(trainer, args, dataset: Dataset, split_name: str) -> Dataset:
+    start_time = time.perf_counter()
+    tokenized_dataset = dataset.map(
+        trainer.tokenize_batch,
+        batched=True,
+        batch_size=getattr(args, "tokenization_batch_size", 64),
+        num_proc=args.dataset_num_proc,
+        desc=f"Tokenizing {split_name}",
+    )
+    elapsed = time.perf_counter() - start_time
+    LOGGER.info(f"tokenized split {split_name} in {elapsed:.2f}s")
+    return tokenized_dataset
 
 
 def _load_manifest(path: Path) -> Dict[str, Any]:
