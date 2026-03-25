@@ -14,7 +14,7 @@ dataset_num_proc: 12
 use_persistent_hf_cache: true
 hf_cache_dir: null
 
-# Beta-DPO 4-GPU first real run arguments
+# Beta-DPO 4-GPU half-debug arguments
 bf16: true
 beta: 0.1
 rho: 1.0
@@ -52,8 +52,8 @@ logging_steps: 10
 log_level: info
 num_train_epochs: 1
 
-output_dir: outputs/llama-3-8b-base-beta-dpo-4gpu-first-real-run
-run_name: llama-3-8b-base-beta-dpo-4gpu-first-real-run
+output_dir: outputs/llama-3-8b-base-beta-dpo-4gpu-half-debug
+run_name: llama-3-8b-base-beta-dpo-4gpu-half-debug
 push_to_hub: true
 save_strategy: steps
 save_steps: 1000000

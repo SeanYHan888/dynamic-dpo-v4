@@ -5,6 +5,7 @@ from typing import Iterable
 
 import torch
 import transformers
+from save_utils import push_prevalidated_hf_artifacts, save_hf_compatible_training_artifacts
 from utils.preprocessing_cache import (
     attach_prompt_preprocessing_metadata,
     build_prompt_preprocessing_metadata,
@@ -168,8 +169,7 @@ def finalize_training(trainer, training_args, model_args, data_args, raw_dataset
 
     run_logger.info("*** Training complete ***")
     run_logger.info("*** Save model ***")
-    trainer.save_model(training_args.output_dir)
-    run_logger.info(f"Model saved to {training_args.output_dir}")
+    save_hf_compatible_training_artifacts(trainer, training_args.output_dir, run_logger)
 
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
@@ -191,6 +191,10 @@ def finalize_training(trainer, training_args, model_args, data_args, raw_dataset
 
     if training_args.push_to_hub is True:
         run_logger.info("Pushing to hub...")
-        trainer.push_to_hub(**kwargs)
+        push_prevalidated_hf_artifacts(
+            trainer,
+            training_args.output_dir,
+            run_logger,
+        )
 
     run_logger.info("*** Training complete! ***")

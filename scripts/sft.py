@@ -41,6 +41,7 @@ import sys
 
 import datasets
 import transformers
+from save_utils import push_prevalidated_hf_artifacts, save_hf_compatible_training_artifacts
 from transformers import set_seed
 from transformers.trainer_utils import get_last_checkpoint
 
@@ -135,8 +136,7 @@ def main(script_args, training_args, model_args):
     # to avoid unbounded generation in the transformers `pipeline()` function
     trainer.model.generation_config.eos_token_id = tokenizer.eos_token_id
     trainer.model.config.eos_token_id = tokenizer.eos_token_id
-    trainer.save_model(training_args.output_dir)
-    logger.info(f"Model saved to {training_args.output_dir}")
+    save_hf_compatible_training_artifacts(trainer, training_args.output_dir, logger)
 
     # Save everything else on main process
     kwargs = {
@@ -165,7 +165,11 @@ def main(script_args, training_args, model_args):
     #############
     if training_args.push_to_hub:
         logger.info("Pushing to hub...")
-        trainer.push_to_hub(**kwargs)
+        push_prevalidated_hf_artifacts(
+            trainer,
+            training_args.output_dir,
+            logger,
+        )
 
 
 if __name__ == "__main__":
