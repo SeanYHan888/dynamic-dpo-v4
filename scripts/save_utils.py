@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from accelerate.utils import DistributedType
 from huggingface_hub import upload_folder
 from transformers.trainer import PREFIX_CHECKPOINT_DIR
 
@@ -71,7 +72,10 @@ def save_hf_compatible_training_artifacts(
     output_path = Path(output_dir)
 
     accelerator.wait_for_everyone()
-    state_dict = accelerator.get_state_dict(trainer.model)
+    # Under FSDP, Accelerate needs the wrapped model to materialize a proper FULL_STATE_DICT.
+    # Using unwrap=True there can expose flattened inner parameters instead of gathered HF weights.
+    unwrap_for_state_dict = accelerator.distributed_type != DistributedType.FSDP
+    state_dict = accelerator.get_state_dict(trainer.model, unwrap=unwrap_for_state_dict)
     unwrapped_model = accelerator.unwrap_model(trainer.model)
 
     if accelerator.is_main_process:
