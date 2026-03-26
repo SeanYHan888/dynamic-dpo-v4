@@ -24,13 +24,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ExportArguments:
-    checkpoint_dir: str = field(metadata={"help": "Path to the FSDP checkpoint directory to export from."})
+    checkpoint_dir: str | None = field(
+        default=None,
+        metadata={"help": "Path to the FSDP checkpoint directory to export from."},
+    )
     export_dir: str | None = field(default=None, metadata={"help": "Optional output directory for exported HF files."})
 
 
 def main():
     parser = H4ArgumentParser((ModelArguments, DataArguments, BetaDPOConfig, ExportArguments))
     model_args, data_args, training_args, export_args = parser.parse()
+
+    if not export_args.checkpoint_dir:
+        raise ValueError("--checkpoint_dir is required.")
 
     setup_run(model_args, data_args, training_args, logger)
     accelerator = Accelerator()
