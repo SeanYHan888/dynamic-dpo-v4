@@ -30,6 +30,7 @@ from utils.preference_tokenization import PreferenceTokenizationProcessor
 from utils.preprocessing_cache import maybe_prepare_tokenized_datasets
 
 from trl.import_utils import is_peft_available, is_wandb_available
+from torch_dtype_utils import normalize_torch_dtype
 from trainer_configs import SimPOConfig
 
 from dataclasses import dataclass
@@ -110,12 +111,8 @@ class AlphaDPOTrainer(Trainer):
         elif not isinstance(model, str):
             raise ValueError("You passed model_kwargs to the AlphaDPOTrainer. But your model is already instantiated.")
         else:
-            model_init_kwargs = args.model_init_kwargs
-            model_init_kwargs["torch_dtype"] = (
-                model_init_kwargs["torch_dtype"]
-                if model_init_kwargs["torch_dtype"] in ["auto", None]
-                else getattr(torch, model_init_kwargs["torch_dtype"])
-            )
+            model_init_kwargs = dict(args.model_init_kwargs)
+            model_init_kwargs["torch_dtype"] = normalize_torch_dtype(model_init_kwargs.get("torch_dtype"))
 
         if isinstance(model, str):
             warnings.warn(

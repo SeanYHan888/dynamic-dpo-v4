@@ -10,6 +10,7 @@ from save_utils import (
     push_prevalidated_hf_artifacts,
     save_hf_compatible_training_artifacts,
 )
+from torch_dtype_utils import normalize_torch_dtype
 from utils.preprocessing_cache import (
     attach_prompt_preprocessing_metadata,
     build_prompt_preprocessing_metadata,
@@ -141,9 +142,7 @@ def prepare_preference_datasets(model_args, data_args, training_args, run_logger
 
 
 def build_model_init_kwargs(model_args, training_args):
-    torch_dtype = (
-        model_args.torch_dtype if model_args.torch_dtype in ["auto", None] else getattr(torch, model_args.torch_dtype)
-    )
+    torch_dtype = normalize_torch_dtype(model_args.torch_dtype)
     quantization_config = get_quantization_config(model_args)
     return {
         "revision": model_args.model_revision,
