@@ -1,0 +1,72 @@
+# Model arguments
+model_name_or_path: W-61/ultrachat-llama-3-8b-sft
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+trust_remote_code: false
+
+# Data training arguments
+dataset_mixer:
+  HuggingFaceH4/ultrafeedback_binarized: 0.1
+dataset_splits:
+  - train_prefs
+preprocessing_num_workers: 8
+dataset_num_proc: 8
+use_persistent_hf_cache: true
+hf_cache_dir: null
+truncation_side: left
+
+# Margin-DPO 2xH100 test arguments
+bf16: true
+fp16: false
+beta: 0.1
+require_explicit_ref_model: true
+f_divergence_type: reverse_kl
+f_alpha_divergence_coef: 1.0
+margin_log_path: outputs/llama-3-8b-ultrachat-sft-margin-dpo-2xh100-test/margin_logs
+margin_log_steps: 10
+margin_save_full: false
+precompute_ref_log_probs: false
+
+loss_type: sigmoid
+max_length: 4096
+max_prompt_length: 3072
+
+per_device_train_batch_size: 2
+per_device_eval_batch_size: 2
+gradient_accumulation_steps: 8
+dataloader_drop_last: true
+
+num_train_epochs: 1
+learning_rate: 5.0e-7
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+optim: adamw_torch_fused
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+tokenization_mode: online
+tokenization_batch_size: 64
+reuse_tokenized_dataset: true
+tokenized_dataset_cache_dir: null
+
+do_eval: false
+evaluation_strategy: "no"
+logging_steps: 10
+log_level: info
+max_steps: 50
+
+output_dir: outputs/llama-3-8b-ultrachat-sft-margin-dpo-2xh100-test
+run_name: llama-3-8b-ultrachat-sft-margin-dpo-2xh100-test
+push_to_hub: false
+save_strategy: "no"
+save_total_limit: 3
+report_to:
+  - tensorboard
+seed: 42
+
+# Trainer compatibility extras
+remove_unused_columns: false
