@@ -1,5 +1,5 @@
 # Model arguments
-model_name_or_path: W-61/ultrachat-llama-3-8b-sft
+model_name_or_path: princeton-nlp/Llama-3-Base-8B-SFT
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 trust_remote_code: false
@@ -61,7 +61,7 @@ max_steps: 50
 
 output_dir: outputs/llama-3-8b-ultrachat-sft-margin-dpo-2xh100-test
 run_name: llama-3-8b-ultrachat-sft-margin-dpo-2xh100-test
-push_to_hub: false
+push_to_hub: true
 save_strategy: "no"
 save_total_limit: 3
 report_to:
