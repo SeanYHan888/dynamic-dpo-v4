@@ -63,24 +63,26 @@ def _get_processing_artifact(trainer: Any) -> Any | None:
     return None
 
 
-def save_hf_compatible_training_artifacts(
-    trainer: Any,
+def save_hf_compatible_model_artifacts(
+    accelerator: Any,
+    model: Any,
     output_dir: str | Path,
     logger: logging.Logger,
+    *,
+    processing_artifact: Any | None = None,
+    safe_serialization: bool = True,
 ) -> None:
-    accelerator = trainer.accelerator
     output_path = Path(output_dir)
 
     accelerator.wait_for_everyone()
     # Under FSDP, Accelerate needs the wrapped model to materialize a proper FULL_STATE_DICT.
     # Using unwrap=True there can expose flattened inner parameters instead of gathered HF weights.
     unwrap_for_state_dict = accelerator.distributed_type != DistributedType.FSDP
-    state_dict = accelerator.get_state_dict(trainer.model, unwrap=unwrap_for_state_dict)
-    unwrapped_model = accelerator.unwrap_model(trainer.model)
+    state_dict = accelerator.get_state_dict(model, unwrap=unwrap_for_state_dict)
+    unwrapped_model = accelerator.unwrap_model(model)
 
     if accelerator.is_main_process:
         validate_causal_lm_export(unwrapped_model, state_dict)
-        safe_serialization = bool(getattr(trainer.args, "save_safetensors", True))
         unwrapped_model.save_pretrained(
             output_path,
             state_dict=state_dict,
@@ -88,13 +90,27 @@ def save_hf_compatible_training_artifacts(
             save_function=accelerator.save,
         )
 
-        processing_artifact = _get_processing_artifact(trainer)
         if processing_artifact is not None:
             processing_artifact.save_pretrained(output_path)
 
         logger.info(f"Saved HF-compatible model artifacts to {output_path}")
 
     accelerator.wait_for_everyone()
+
+
+def save_hf_compatible_training_artifacts(
+    trainer: Any,
+    output_dir: str | Path,
+    logger: logging.Logger,
+) -> None:
+    save_hf_compatible_model_artifacts(
+        trainer.accelerator,
+        trainer.model,
+        output_dir,
+        logger,
+        processing_artifact=_get_processing_artifact(trainer),
+        safe_serialization=bool(getattr(trainer.args, "save_safetensors", True)),
+    )
 
 
 def push_prevalidated_hf_artifacts(
