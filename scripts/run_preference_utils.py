@@ -5,7 +5,11 @@ from typing import Iterable
 
 import torch
 import transformers
-from save_utils import push_prevalidated_hf_artifacts, save_hf_compatible_training_artifacts
+from save_utils import (
+    maybe_push_margin_dataset_summary,
+    push_prevalidated_hf_artifacts,
+    save_hf_compatible_training_artifacts,
+)
 from utils.preprocessing_cache import (
     attach_prompt_preprocessing_metadata,
     build_prompt_preprocessing_metadata,
@@ -195,6 +199,12 @@ def finalize_training(trainer, training_args, model_args, data_args, raw_dataset
             trainer,
             training_args.output_dir,
             run_logger,
+        )
+        maybe_push_margin_dataset_summary(
+            trainer,
+            run_logger,
+            model_args=model_args,
+            data_args=data_args,
         )
 
     run_logger.info("*** Training complete! ***")

@@ -1,0 +1,63 @@
+# Model arguments
+model_name_or_path: princeton-nlp/Llama-3-Base-8B-SFT
+torch_dtype: bfloat16
+attn_implementation: sdpa
+
+# Data training arguments
+dataset_mixer:
+  HuggingFaceH4/ultrafeedback_binarized: 0.1
+dataset_splits:
+  - train_prefs
+  - test_prefs
+preprocessing_num_workers: 8
+dataset_num_proc: 8
+use_persistent_hf_cache: true
+hf_cache_dir: null
+
+# Margin-DPO 2xH100 arguments
+bf16: true
+beta: 0.1
+require_explicit_ref_model: true
+f_divergence_type: reverse_kl
+f_alpha_divergence_coef: 1.0
+margin_log_path: outputs/llama-3-8b-base-margin-dpo-2xh100/margin_logs
+margin_log_steps: 50
+margin_save_full: false
+precompute_ref_log_probs: true
+
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 4
+gradient_accumulation_steps: 8
+dataloader_drop_last: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+learning_rate: 5.0e-7
+warmup_ratio: 0.05
+lr_scheduler_type: linear
+optim: rmsprop
+
+max_length: 2048
+max_prompt_length: 1792
+tokenization_mode: reuse_only
+tokenization_batch_size: 64
+reuse_tokenized_dataset: true
+tokenized_dataset_cache_dir: .cache/tokenized_preferences
+
+do_eval: true
+evaluation_strategy: steps
+eval_steps: 200
+logging_steps: 10
+log_level: info
+num_train_epochs: 1
+
+output_dir: outputs/llama-3-8b-base-margin-dpo-2xh100
+run_name: llama-3-8b-base-margin-dpo-2xh100
+push_to_hub: true
+save_strategy: steps
+save_steps: 200
+save_total_limit: 5
+report_to: []
+seed: 42
