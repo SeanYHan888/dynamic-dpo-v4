@@ -48,7 +48,7 @@ report_to:
   - wandb
 save_total_limit: 20
 seed: 42
-warmup_ratio: 0.1
+warmup_ratio: 0.05
 margin_log_path: outputs/llama-3-8b-base-margin-dpo/margin_logs
 margin_log_steps: 50
 margin_save_full: false
