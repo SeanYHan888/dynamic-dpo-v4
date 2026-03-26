@@ -72,6 +72,8 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
                 raise KeyError(
                     "precompute_ref_logps=True requires both 'ref_chosen_logps' and 'ref_rejected_logps' in the batch."
                 )
+            if not torch.isfinite(batch["ref_chosen_logps"]).all() or not torch.isfinite(batch["ref_rejected_logps"]).all():
+                raise ValueError("Encountered non-finite precomputed reference log-probs in the training batch.")
             return batch["ref_chosen_logps"], batch["ref_rejected_logps"]
 
         if self.ref_model is None and self.require_explicit_ref_model:

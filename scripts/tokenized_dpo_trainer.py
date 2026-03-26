@@ -68,6 +68,13 @@ class TokenizedDPOTrainer(Trainer):
             model_init_kwargs = dict(args.model_init_kwargs)
             model_init_kwargs["torch_dtype"] = normalize_torch_dtype(model_init_kwargs.get("torch_dtype"))
 
+        self.precompute_ref_logps = bool(
+            getattr(args, "precompute_ref_log_probs", False) or getattr(args, "precompute_ref_logps", False)
+        )
+        self._precompute_ref_model_path = ref_model if isinstance(ref_model, str) and self.precompute_ref_logps else None
+        self._precompute_ref_model = None
+        self._precompute_ref_model_init_kwargs = self._build_precompute_ref_model_init_kwargs(model_init_kwargs)
+
         if isinstance(model, str):
             warnings.warn(
                 "You passed a model_id to the trainer. This will automatically create an "
@@ -76,7 +83,9 @@ class TokenizedDPOTrainer(Trainer):
             model = AutoModelForCausalLM.from_pretrained(model, **model_init_kwargs)
 
         if isinstance(ref_model, str):
-            self.ref_model = AutoModelForCausalLM.from_pretrained(ref_model, **model_init_kwargs)
+            self.ref_model = None if self.precompute_ref_logps else AutoModelForCausalLM.from_pretrained(
+                ref_model, **model_init_kwargs
+            )
         else:
             self.ref_model = ref_model
 
@@ -187,9 +196,6 @@ class TokenizedDPOTrainer(Trainer):
         self.sft_weight = getattr(args, "sft_weight", 0.0)
         self.label_smoothing = getattr(args, "label_smoothing", 0.0)
         self.loss_type = getattr(args, "loss_type", "sigmoid")
-        self.precompute_ref_logps = bool(
-            getattr(args, "precompute_ref_log_probs", False) or getattr(args, "precompute_ref_logps", False)
-        )
         self._precomputed_train_ref_logps = False
         self._precomputed_eval_ref_logps = False
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
@@ -217,7 +223,7 @@ class TokenizedDPOTrainer(Trainer):
         if not hasattr(self, "accelerator"):
             raise AttributeError("Your `Trainer` does not have an `accelerator` object. Consider upgrading `transformers`.")
 
-        if self.ref_model is not None:
+        if self.ref_model is not None and not self.precompute_ref_logps:
             if self.is_deepspeed_enabled:
                 self.ref_model = self._prepare_deepspeed(self.ref_model)
             else:
@@ -252,19 +258,67 @@ class TokenizedDPOTrainer(Trainer):
         model.eval()
         return model
 
+    @staticmethod
+    def _build_precompute_ref_model_init_kwargs(model_init_kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        precompute_kwargs = dict(model_init_kwargs)
+        precompute_kwargs["torch_dtype"] = torch.float32
+        precompute_kwargs["use_cache"] = False
+        precompute_kwargs["device_map"] = None
+        precompute_kwargs["quantization_config"] = None
+        return precompute_kwargs
+
+    def _load_precompute_ref_model(self) -> nn.Module:
+        if self._precompute_ref_model is not None:
+            return self._precompute_ref_model
+
+        if self._precompute_ref_model_path is None:
+            raise ValueError(
+                "precompute_ref_log_probs=True requires ref_model to be provided as a model identifier or path "
+                "so a dedicated fp32 precompute model can be loaded."
+            )
+
+        ref_model = AutoModelForCausalLM.from_pretrained(
+            self._precompute_ref_model_path,
+            **self._precompute_ref_model_init_kwargs,
+        )
+        if getattr(self.args, "disable_dropout", False):
+            disable_dropout_in_model(ref_model)
+        ref_model.to(device=self.accelerator.device)
+        ref_model.eval()
+        self._precompute_ref_model = ref_model
+        return self._precompute_ref_model
+
+    def _release_precompute_ref_model(self) -> None:
+        if self._precompute_ref_model is None:
+            return
+
+        del self._precompute_ref_model
+        self._precompute_ref_model = None
+        torch.cuda.empty_cache()
+        self.accelerator.free_memory()
+
     @torch.no_grad()
     def compute_reference_log_probs(
         self,
         padded_batch: Dict[str, Union[torch.Tensor, Any]],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if self.ref_model is None:
+        ref_model = self._load_precompute_ref_model() if self.precompute_ref_logps else self.ref_model
+        if ref_model is None:
             raise ValueError("Reference model is required to precompute reference log-probs.")
 
-        ref_chosen_logps, ref_rejected_logps, _, _, _ = self.concatenated_forward(
-            self.ref_model,
-            padded_batch,
-            average_log_prob=False,
+        autocast_context = (
+            torch.autocast(device_type=self.accelerator.device.type, enabled=False)
+            if self.precompute_ref_logps and self.accelerator.device.type != "cpu"
+            else nullcontext()
         )
+        inference_context = torch.inference_mode() if self.precompute_ref_logps else nullcontext()
+        with inference_context, autocast_context:
+            ref_chosen_logps, ref_rejected_logps, _, _, _ = self.concatenated_forward(
+                ref_model,
+                padded_batch,
+                average_log_prob=False,
+                force_logits_to_float32=self.precompute_ref_logps,
+            )
         return ref_chosen_logps, ref_rejected_logps
 
     def _precompute_dataset_reference_logps(
@@ -284,24 +338,32 @@ class TokenizedDPOTrainer(Trainer):
 
         reference_chosen_logps = []
         reference_rejected_logps = []
-        for padded_batch in tqdm(iterable=data_loader, desc=description):
-            ref_chosen_logp, ref_rejected_logp = self.compute_reference_log_probs(padded_batch)
-            ref_chosen_logp, ref_rejected_logp = self.accelerator.gather_for_metrics(
-                (ref_chosen_logp, ref_rejected_logp)
-            )
-            reference_chosen_logps.append(ref_chosen_logp.cpu())
-            reference_rejected_logps.append(ref_rejected_logp.cpu())
+        try:
+            for padded_batch in tqdm(iterable=data_loader, desc=description):
+                ref_chosen_logp, ref_rejected_logp = self.compute_reference_log_probs(padded_batch)
+                if not torch.isfinite(ref_chosen_logp).all() or not torch.isfinite(ref_rejected_logp).all():
+                    raise ValueError(
+                        f"Non-finite reference log-probs encountered during {description}. "
+                        "This usually indicates numerical instability in the reference forward pass."
+                    )
+                ref_chosen_logp, ref_rejected_logp = self.accelerator.gather_for_metrics(
+                    (ref_chosen_logp, ref_rejected_logp)
+                )
+                reference_chosen_logps.append(ref_chosen_logp.cpu())
+                reference_rejected_logps.append(ref_rejected_logp.cpu())
 
-            # Reduce allocator pressure before the actual training loop starts.
-            torch.cuda.empty_cache()
-            self.accelerator.free_memory()
+                # Reduce allocator pressure before the actual training loop starts.
+                torch.cuda.empty_cache()
+                self.accelerator.free_memory()
 
-        all_reference_chosen_logps = torch.cat(reference_chosen_logps).float().numpy()[: len(dataset)]
-        all_reference_rejected_logps = torch.cat(reference_rejected_logps).float().numpy()[: len(dataset)]
+            all_reference_chosen_logps = torch.cat(reference_chosen_logps).float().numpy()[: len(dataset)]
+            all_reference_rejected_logps = torch.cat(reference_rejected_logps).float().numpy()[: len(dataset)]
 
-        dataset = dataset.add_column(name="ref_chosen_logps", column=all_reference_chosen_logps)
-        dataset = dataset.add_column(name="ref_rejected_logps", column=all_reference_rejected_logps)
-        return dataset
+            dataset = dataset.add_column(name="ref_chosen_logps", column=all_reference_chosen_logps)
+            dataset = dataset.add_column(name="ref_rejected_logps", column=all_reference_rejected_logps)
+            return dataset
+        finally:
+            self._release_precompute_ref_model()
 
     def _maybe_release_ref_model(self) -> None:
         if self.ref_model is None or not self.precompute_ref_logps:
@@ -319,9 +381,12 @@ class TokenizedDPOTrainer(Trainer):
 
     def get_train_dataloader(self) -> DataLoader:
         if self.precompute_ref_logps and not self._precomputed_train_ref_logps:
+            precompute_batch_size = getattr(self.args, "precompute_ref_batch_size", None)
+            if precompute_batch_size is None:
+                precompute_batch_size = self.args.per_device_train_batch_size
             self.train_dataset = self._precompute_dataset_reference_logps(
                 self.train_dataset,
-                batch_size=self.args.per_device_train_batch_size,
+                batch_size=precompute_batch_size,
                 description="Train dataset reference log probs",
             )
             self._precomputed_train_ref_logps = True
@@ -335,9 +400,12 @@ class TokenizedDPOTrainer(Trainer):
             raise ValueError("Trainer: evaluation requires an eval_dataset.")
 
         if self.precompute_ref_logps and not self._precomputed_eval_ref_logps:
+            precompute_eval_batch_size = getattr(self.args, "precompute_ref_eval_batch_size", None)
+            if precompute_eval_batch_size is None:
+                precompute_eval_batch_size = self.args.per_device_eval_batch_size
             eval_dataset = self._precompute_dataset_reference_logps(
                 eval_dataset,
-                batch_size=self.args.per_device_eval_batch_size,
+                batch_size=precompute_eval_batch_size,
                 description="Eval dataset reference log probs",
             )
             if self.eval_dataset is not None:
@@ -427,6 +495,7 @@ class TokenizedDPOTrainer(Trainer):
         model: nn.Module,
         batch: Dict[str, Union[List, torch.LongTensor]],
         average_log_prob: bool = False,
+        force_logits_to_float32: bool = False,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.LongTensor]:
         model_device = self._get_model_device(model)
         if model_device is None or model_device.type == "cpu":
@@ -455,6 +524,8 @@ class TokenizedDPOTrainer(Trainer):
             use_cache=False,
             **model_kwargs,
         ).logits
+        if force_logits_to_float32:
+            all_logits = all_logits.float()
 
         all_logps = self.get_batch_logps(
             all_logits,
@@ -492,15 +563,60 @@ class TokenizedDPOTrainer(Trainer):
             raise ValueError("Logits (batch and sequence length dim) and labels must have the same shape.")
 
         if not is_encoder_decoder:
-            labels = labels[:, 1:].clone()
+            labels = labels[:, 1:]
             logits = logits[:, :-1, :]
         loss_mask = labels != label_pad_token_id
-        labels[labels == label_pad_token_id] = 0
-        per_token_logps = torch.gather(logits.log_softmax(-1), dim=2, index=labels.unsqueeze(2)).squeeze(2)
+        safe_labels = labels.masked_fill(~loss_mask, 0)
+        per_token_logps = TokenizedDPOTrainer._compute_token_logps(logits, safe_labels)
 
         if average_log_prob:
-            return (per_token_logps * loss_mask).sum(-1) / loss_mask.sum(-1)
+            return (per_token_logps * loss_mask).sum(-1) / loss_mask.sum(-1).clamp_min(1)
         return (per_token_logps * loss_mask).sum(-1)
+
+    @staticmethod
+    def _compute_token_logps(logits: torch.FloatTensor, labels: torch.LongTensor) -> torch.FloatTensor:
+        if not torch.isfinite(logits).all():
+            logits = TokenizedDPOTrainer._sanitize_logits_for_logps(logits)
+            selected_logits = torch.gather(logits, dim=2, index=labels.unsqueeze(2)).squeeze(2)
+            log_normalizers = TokenizedDPOTrainer._chunked_logsumexp_fp32(logits)
+            return selected_logits - log_normalizers
+
+        selected_logits = torch.gather(logits, dim=2, index=labels.unsqueeze(2)).squeeze(2)
+        log_normalizers = torch.logsumexp(logits, dim=-1)
+        per_token_logps = selected_logits - log_normalizers
+
+        if torch.isfinite(per_token_logps).all():
+            return per_token_logps
+
+        if logits.dtype not in (torch.float16, torch.bfloat16):
+            return per_token_logps
+
+        selected_logits_fp32 = selected_logits.float()
+        log_normalizers_fp32 = TokenizedDPOTrainer._chunked_logsumexp_fp32(logits)
+        return selected_logits_fp32 - log_normalizers_fp32
+
+    @staticmethod
+    def _sanitize_logits_for_logps(logits: torch.FloatTensor) -> torch.FloatTensor:
+        non_finite_count = int((~torch.isfinite(logits)).sum().item())
+        warnings.warn(
+            f"Detected {non_finite_count} non-finite logits while computing token log-probs; "
+            "sanitizing logits to keep reference/preference scoring numerically stable.",
+            RuntimeWarning,
+        )
+        sanitized_logits = torch.nan_to_num(logits.float(), nan=0.0, posinf=1e4, neginf=-1e4)
+        return sanitized_logits.clamp_(min=-1e4, max=1e4)
+
+    @staticmethod
+    def _chunked_logsumexp_fp32(logits: torch.FloatTensor, chunk_size: int = 2048) -> torch.FloatTensor:
+        log_normalizers = None
+        vocab_size = logits.shape[-1]
+        for start in range(0, vocab_size, chunk_size):
+            chunk = logits[..., start : start + chunk_size].float()
+            chunk_logsumexp = torch.logsumexp(chunk, dim=-1)
+            log_normalizers = (
+                chunk_logsumexp if log_normalizers is None else torch.logaddexp(log_normalizers, chunk_logsumexp)
+            )
+        return log_normalizers
 
     def compute_loss(
         self,
