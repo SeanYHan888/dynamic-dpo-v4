@@ -86,6 +86,7 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
                 self.ref_model,
                 batch,
                 average_log_prob=False,
+                logit_source="reference",
             )
         return ref_chosen_logps, ref_rejected_logps
 
@@ -125,6 +126,8 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
     def _maybe_log_margin(self, margin_tensor: torch.Tensor) -> None:
         if not self.model.training:
             return
+        if not self.accelerator.sync_gradients:
+            return
 
         step = int(self.state.global_step)
         if self.margin_log_steps <= 0 or step % self.margin_log_steps != 0:
@@ -156,6 +159,7 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
             model,
             batch,
             average_log_prob=False,
+            logit_source="policy",
         )
         ref_chosen_logps, ref_rejected_logps = self._get_reference_logps(batch)
         ref_chosen_logps = ref_chosen_logps.to(chosen_logps.device)
@@ -173,7 +177,7 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
         loss = per_seq_loss.mean()
 
         metrics[f"{prefix}margin_dpo/margin_mean"] = margin.detach().mean().cpu()
-        metrics[f"{prefix}margin_dpo/margin_std"] = margin.detach().std().cpu()
+        metrics[f"{prefix}margin_dpo/margin_std"] = margin.detach().std(unbiased=False).cpu()
         metrics[f"{prefix}logps/chosen"] = chosen_logps.detach().mean().cpu()
         metrics[f"{prefix}logps/rejected"] = rejected_logps.detach().mean().cpu()
         metrics[f"{prefix}logps/ref_chosen"] = ref_chosen_logps.detach().mean().cpu()
