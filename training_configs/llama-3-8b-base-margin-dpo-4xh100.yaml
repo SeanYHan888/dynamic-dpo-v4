@@ -8,6 +8,7 @@ dataset_mixer:
   HuggingFaceH4/ultrafeedback_binarized: 0.1
 dataset_splits:
   - train_prefs
+  - test_prefs
 dataset_configs:
   - default
 preprocessing_num_workers: 8
