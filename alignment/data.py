@@ -14,7 +14,8 @@
 # limitations under the License.
 
 import os
-from typing import Any, List, Literal, Optional
+import re
+from typing import Any, Dict, List, Literal, Optional
 
 from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk
 from datasets.builder import DatasetGenerationError
@@ -23,6 +24,7 @@ from .configs import DataArguments
 
 
 DEFAULT_CHAT_TEMPLATE = "{% for message in messages %}\n{% if message['role'] == 'user' %}\n{{ '<|user|>\n' + message['content'] + eos_token }}\n{% elif message['role'] == 'system' %}\n{{ '<|system|>\n' + message['content'] + eos_token }}\n{% elif message['role'] == 'assistant' %}\n{{ '<|assistant|>\n'  + message['content'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
+HH_TURN_PATTERN = re.compile(r"(?:^|\n\n)(Human|Assistant): ")
 
 
 def maybe_insert_system_message(messages, tokenizer):
@@ -37,6 +39,73 @@ def maybe_insert_system_message(messages, tokenizer):
     # confirm the jinja template refers to a system message before inserting
     if "system" in chat_template or "<|im_start|>" in chat_template:
         messages.insert(0, {"role": "system", "content": ""})
+
+
+def parse_hh_transcript(transcript: str) -> List[Dict[str, str]]:
+    if not isinstance(transcript, str):
+        raise ValueError(f"HH transcript must be a string, got {type(transcript)}")
+
+    matches = list(HH_TURN_PATTERN.finditer(transcript))
+    if not matches:
+        raise ValueError("HH transcript does not contain any 'Human:' or 'Assistant:' turns.")
+
+    messages = []
+    for idx, match in enumerate(matches):
+        start = match.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(transcript)
+        content = transcript[start:end].strip()
+        if not content:
+            raise ValueError("HH transcript contains an empty turn.")
+
+        role = "user" if match.group(1) == "Human" else "assistant"
+        messages.append({"role": role, "content": content})
+
+    return messages
+
+
+def is_raw_hh_preference_example(example: Dict[str, Any]) -> bool:
+    chosen = example.get("chosen")
+    rejected = example.get("rejected")
+    if not isinstance(chosen, str) or not isinstance(rejected, str):
+        return False
+
+    turn_markers = ("Human:", "Assistant:")
+    return all(marker in chosen for marker in turn_markers) and all(marker in rejected for marker in turn_markers)
+
+
+def maybe_convert_hh_to_openai_format(example: Dict[str, Any]) -> Dict[str, Any]:
+    if not is_raw_hh_preference_example(example):
+        return example
+
+    chosen_messages = parse_hh_transcript(example["chosen"])
+    rejected_messages = parse_hh_transcript(example["rejected"])
+
+    prefix_len = 0
+    for chosen_message, rejected_message in zip(chosen_messages, rejected_messages):
+        if chosen_message != rejected_message:
+            break
+        prefix_len += 1
+
+    if prefix_len == 0:
+        raise ValueError("HH chosen/rejected transcripts must share a non-empty common prefix.")
+    if prefix_len >= len(chosen_messages) or prefix_len >= len(rejected_messages):
+        raise ValueError("HH chosen/rejected transcripts must each contain a divergent assistant response.")
+
+    prompt_messages = chosen_messages[:prefix_len]
+    chosen_suffix = chosen_messages[prefix_len:]
+    rejected_suffix = rejected_messages[prefix_len:]
+
+    if prompt_messages[-1]["role"] != "user":
+        raise ValueError("HH prompt prefix must end with a user turn before the compared assistant responses.")
+    if len(chosen_suffix) != 1 or len(rejected_suffix) != 1:
+        raise ValueError("HH preprocessing expects exactly one final assistant response in chosen/rejected suffixes.")
+    if chosen_suffix[0]["role"] != "assistant" or rejected_suffix[0]["role"] != "assistant":
+        raise ValueError("HH chosen/rejected suffixes must each contain one assistant message.")
+
+    example["prompt"] = prompt_messages
+    example["chosen"] = chosen_suffix
+    example["rejected"] = rejected_suffix
+    return example
 
 
 def apply_chat_template(
@@ -214,8 +283,12 @@ def mix_datasets(
         fracs.append(frac)
         for split in splits:
             try:
-                # Try first if dataset on a Hub repo
-                dataset = load_dataset(ds, ds_config, split=split)
+                # Keep the existing API surface and only reinterpret `dataset_configs`
+                # as `data_dir` for Anthropic HH raw subsets such as `helpful-base`.
+                if ds == "Anthropic/hh-rlhf" and ds_config is not None:
+                    dataset = load_dataset(ds, split=split, data_dir=ds_config)
+                else:
+                    dataset = load_dataset(ds, ds_config, split=split)
             except DatasetGenerationError:
                 # If not, check local dataset
                 dataset = load_from_disk(os.path.join(ds, split))

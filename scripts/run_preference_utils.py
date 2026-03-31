@@ -19,7 +19,7 @@ from utils.preprocessing_cache import (
 from transformers import set_seed
 
 from alignment import get_checkpoint, get_datasets, get_kbit_device_map, get_quantization_config, get_tokenizer
-from alignment.data import is_openai_format, maybe_insert_system_message
+from alignment.data import is_openai_format, maybe_convert_hh_to_openai_format, maybe_insert_system_message
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,8 @@ def apply_preference_chat_template(
 ):
     if change_template == "mistral":
         tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
+
+    example = maybe_convert_hh_to_openai_format(example)
 
     if not all(key in example.keys() for key in ("chosen", "rejected")):
         raise ValueError(
