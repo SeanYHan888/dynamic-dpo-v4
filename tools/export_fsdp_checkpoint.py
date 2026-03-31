@@ -13,11 +13,14 @@ from transformers import AutoModelForCausalLM
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 from alignment import DataArguments, H4ArgumentParser, ModelArguments, get_tokenizer
-from run_preference_utils import build_model_init_kwargs, setup_run
-from save_utils import save_hf_compatible_model_artifacts
 from trainer_configs import BetaDPOConfig
+from utils.checkpoint_io import save_hf_compatible_model_artifacts
+from utils.runtime import build_model_init_kwargs, setup_run
 
 logger = logging.getLogger(__name__)
 

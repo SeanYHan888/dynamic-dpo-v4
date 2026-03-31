@@ -15,15 +15,15 @@ from datasets import Dataset
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, DataCollator, PreTrainedModel, PreTrainedTokenizerBase, Trainer
 from trl.trainer import CPOTrainer
-from utils.preference_tokenization import PreferenceTokenizationProcessor
 from utils.preprocessing_cache import maybe_prepare_tokenized_datasets
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import EvalLoopOutput
 from transformers.utils import is_torch_fx_proxy
 
+from tokenized_dpo_trainer import PreferenceTokenizationProcessor
 from trl.import_utils import is_peft_available, is_wandb_available
-from torch_dtype_utils import normalize_torch_dtype
 from trainer_configs import SimPOConfig
+from utils.dtypes import normalize_torch_dtype
 
 from dataclasses import dataclass
 from typing import Dict, Literal, Optional

@@ -10,9 +10,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from alignment import DataArguments, H4ArgumentParser, ModelArguments, get_peft_config
 from alpha_dpo_trainer import AlphaDPOTrainer
-from run_preference_utils import finalize_training, prepare_preference_datasets, setup_run
 from simpo_trainer import SimPOTrainer
 from trainer_configs import SimPOConfig
+from utils.runtime import finalize_training, prepare_preference_datasets, setup_run
 
 logger = logging.getLogger(__name__)
 

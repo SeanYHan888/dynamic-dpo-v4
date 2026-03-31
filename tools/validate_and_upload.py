@@ -12,11 +12,10 @@ from huggingface_hub import HfApi, upload_folder
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DPO_EVAL_DIR = REPO_ROOT / "dpo-eval"
-if str(DPO_EVAL_DIR) not in sys.path:
-    sys.path.insert(0, str(DPO_EVAL_DIR))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-from checkpoint_validation import preflight_validate_causal_lm_artifact
+from utils.artifact_validation import preflight_validate_causal_lm_artifact
 
 
 REQUIRED_FILES = (

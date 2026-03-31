@@ -7,7 +7,7 @@ This repository contains preference-training code for:
 - beta-DPO
 - margin-DPO
 
-The main training entrypoints live in [scripts](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts), and the runnable YAML configs live in [training_configs](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/training_configs).
+The main training entrypoints live in [scripts](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts), shared runner-side infrastructure lives in [utils](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/utils), ops workflows live in [tools](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tools), and runnable YAML configs live in [training_configs](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/training_configs). The inherited [alignment](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/alignment) package is intentionally kept unchanged.
 
 ## Setup
 
@@ -32,15 +32,14 @@ If you are using Hugging Face Hub or Weights & Biases, make sure you are already
 
 ## Repo Layout
 
-- [scripts/run_simpo.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts/run_simpo.py): SimPO training entrypoint
-- [scripts/run_alpha_dpo.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts/run_alpha_dpo.py): SimPO / alpha-DPO entrypoint
-- [scripts/run_beta_dpo.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts/run_beta_dpo.py): beta-DPO entrypoint
-- [scripts/run_margin_dpo.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts/run_margin_dpo.py): margin-DPO entrypoint
-- [training_configs/llama-3-8b-base-beta-dpo-smoke.yaml](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/training_configs/llama-3-8b-base-beta-dpo-smoke.yaml): beta-DPO smoke config
-- [training_configs/llama-3-8b-base-margin-dpo-smoke.yaml](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/training_configs/llama-3-8b-base-margin-dpo-smoke.yaml): margin-DPO smoke config
-- [training_configs/llama-3-8b-base-beta-dpo.yaml](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/training_configs/llama-3-8b-base-beta-dpo.yaml): beta-DPO full config
-- [training_configs/llama-3-8b-base-margin-dpo.yaml](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/training_configs/llama-3-8b-base-margin-dpo.yaml): margin-DPO full config
-- [accelerate_configs/fsdp.yaml](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/accelerate_configs/fsdp.yaml): base FSDP accelerate config
+- [scripts](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts): flat training layer with runners, trainers, and `trainer_configs.py`
+- [utils/runtime.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/utils/runtime.py): runner-oriented setup, dataset prep, model init kwargs, and final training lifecycle helpers
+- [utils/checkpoint_io.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/utils/checkpoint_io.py): validated save/export/upload helpers for model artifacts and margin summaries
+- [utils/preprocessing_cache.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/utils/preprocessing_cache.py): tokenized dataset cache and reuse logic
+- [tools](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tools): CLI workflows for offline tokenization, FSDP export, and checkpoint validation/upload
+- [training_configs](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/training_configs): runnable training YAML configs
+- [accelerate_configs](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/accelerate_configs): accelerate launch configs
+- [tests/restructure_validation.md](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tests/restructure_validation.md): saved validation report after the layout restructure
 
 ## Step-by-Step Usage
 
@@ -52,8 +51,17 @@ Run this once after syncing dependencies:
 uv run python -m py_compile \
   scripts/run_beta_dpo.py \
   scripts/run_margin_dpo.py \
+  scripts/run_alpha_dpo.py \
+  scripts/run_simpo.py \
   scripts/beta_dpo_trainer.py \
-  scripts/margin_dpo_trainer.py
+  scripts/margin_dpo_trainer.py \
+  scripts/tokenized_dpo_trainer.py \
+  utils/runtime.py \
+  utils/checkpoint_io.py \
+  utils/dtypes.py \
+  tools/pretokenize_preferences.py \
+  tools/export_fsdp_checkpoint.py \
+  tools/validate_and_upload.py
 ```
 
 This does a syntax-level check without starting a real training run.
@@ -207,3 +215,7 @@ Use quantization only if you explicitly want low-memory loading or a QLoRA-style
 ### Current Environment Caveat
 
 If the environment throws an OpenMP / shared-memory initialization error during `import torch`, that is an environment issue rather than a trainer-logic issue. In that case, fix the runtime environment first before using smoke-run failures as evidence of trainer breakage.
+
+## Validation Reports
+
+After structural refactors, save the validation summary under [tests/restructure_validation.md](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tests/restructure_validation.md) so syntax checks, test runs, and import smoke checks are recorded in-repo.

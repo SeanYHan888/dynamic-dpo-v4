@@ -9,9 +9,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from alignment import DataArguments, H4ArgumentParser, ModelArguments, get_peft_config
-from run_preference_utils import finalize_training, prepare_preference_datasets, setup_run
 from simpo_trainer import SimPOTrainer
 from trainer_configs import SimPOConfig
+from utils.runtime import finalize_training, prepare_preference_datasets, setup_run
 
 logger = logging.getLogger(__name__)
 

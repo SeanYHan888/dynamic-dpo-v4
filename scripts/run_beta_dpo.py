@@ -10,8 +10,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from alignment import DataArguments, H4ArgumentParser, ModelArguments, get_peft_config
 from beta_dpo_trainer import BetaDPOTrainer
-from run_preference_utils import finalize_training, prepare_preference_datasets, setup_run
 from trainer_configs import BetaDPOConfig
+from utils.runtime import finalize_training, prepare_preference_datasets, setup_run
 
 logger = logging.getLogger(__name__)
 

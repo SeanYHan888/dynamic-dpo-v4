@@ -44,9 +44,17 @@ Optional extras:
 
 ### Shared runtime / preprocessing
 
-- [scripts/run_preference_utils.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts/run_preference_utils.py)
+- [utils/runtime.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/utils/runtime.py)
+- [utils/checkpoint_io.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/utils/checkpoint_io.py)
+- [utils/preprocessing_cache.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/utils/preprocessing_cache.py)
 - [scripts/trainer_configs.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts/trainer_configs.py)
 - [scripts/tokenized_dpo_trainer.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts/tokenized_dpo_trainer.py)
+
+### Operator tools
+
+- [tools/pretokenize_preferences.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tools/pretokenize_preferences.py)
+- [tools/export_fsdp_checkpoint.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tools/export_fsdp_checkpoint.py)
+- [tools/validate_and_upload.py](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tools/validate_and_upload.py)
 
 ### Algorithm-specific trainers
 
@@ -64,7 +72,7 @@ Optional extras:
 
 ### 1. Dataset formatting
 
-The run scripts all delegate preference dataset preparation to `run_preference_utils.py`.
+The run scripts all delegate preference dataset preparation to `utils/runtime.py`.
 
 The high-level flow is:
 
@@ -87,9 +95,25 @@ The shared trainer base in `tokenized_dpo_trainer.py` owns:
 - concatenated chosen+rejected batching
 - sequence log-prob extraction
 
-This is the standard preference data path for beta-DPO and margin-DPO.
+This is the standard preference data path for beta-DPO and margin-DPO. The shared tokenization helper is intentionally grouped inside `tokenized_dpo_trainer.py` for now so it can be split later without being lost in generic utilities.
 
-### 3. Algorithm layer
+### 3. Runner-side orchestration
+
+`utils/runtime.py` owns:
+
+- logging setup
+- checkpoint resume detection
+- dataset loading + chat formatting orchestration
+- model init kwargs
+- final train/save/eval/push flow
+
+`utils/checkpoint_io.py` owns:
+
+- validated HF artifact saving
+- model artifact upload
+- margin summary dataset publishing
+
+### 4. Algorithm layer
 
 Each algorithm-specific trainer only owns the math that should differ:
 
@@ -200,7 +224,7 @@ Do not use quantization by default for:
 
 - smoke runs
 - standard 4x H100 FSDP runs
-- [ ] Validation Checklist
+## Validation Checklist
 
 Minimum safe validation after code changes:
 
@@ -208,16 +232,27 @@ Minimum safe validation after code changes:
 
 ```bash
 uv run python -m py_compile \
+  scripts/run_alpha_dpo.py \
   scripts/run_beta_dpo.py \
   scripts/run_margin_dpo.py \
+  scripts/run_simpo.py \
+  scripts/alpha_dpo_trainer.py \
   scripts/beta_dpo_trainer.py \
   scripts/margin_dpo_trainer.py \
+  scripts/simpo_trainer.py \
   scripts/tokenized_dpo_trainer.py \
-  scripts/trainer_configs.py
+  scripts/trainer_configs.py \
+  utils/runtime.py \
+  utils/checkpoint_io.py \
+  utils/dtypes.py \
+  tools/pretokenize_preferences.py \
+  tools/export_fsdp_checkpoint.py \
+  tools/validate_and_upload.py
 ```
 
 2. Single-GPU smoke run for the changed path
 3. If beta-DPO distributed logic changed, run a 4-GPU beta-DPO smoke
+4. Save the validation summary to [tests/restructure_validation.md](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tests/restructure_validation.md)
 
 ## Known Caveat
 
@@ -232,7 +267,7 @@ that is an environment/runtime issue, not necessarily a trainer logic issue.
 
 ## When Editing This Repo
 
-- Prefer modifying shared behavior in `tokenized_dpo_trainer.py` or `run_preference_utils.py`
+- Prefer modifying shared behavior in `tokenized_dpo_trainer.py` or `utils/runtime.py`
 - Keep config definitions centralized in `trainer_configs.py`
 - Keep run commands and README instructions aligned with actual config filenames
 - If you change training entrypoints or standard commands, update [README.md](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/README.md) too

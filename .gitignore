@@ -163,3 +163,7 @@ cython_debug/
 data/
 wandb/
 outputs/
+alpha-DPO/
+beta-DPO/
+direct-preference-optimization/
+dpo-eval/

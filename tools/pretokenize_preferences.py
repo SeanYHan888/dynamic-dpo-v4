@@ -5,18 +5,22 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Type
+
 import yaml
 from transformers import AutoConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 from alignment import DataArguments, H4ArgumentParser, ModelArguments
-from run_preference_utils import prepare_preference_datasets, setup_run
+from tokenized_dpo_trainer import PreferenceTokenizationProcessor
 from trainer_configs import BetaDPOConfig, MarginDPOConfig, SimPOConfig
-from utils.preference_tokenization import PreferenceTokenizationProcessor
 from utils.preprocessing_cache import maybe_prepare_tokenized_datasets
+from utils.runtime import prepare_preference_datasets, setup_run
 
 logger = logging.getLogger(__name__)
 

@@ -1,18 +1,12 @@
 import json
 import logging
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = REPO_ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import run_preference_utils
-import save_utils
+import utils.checkpoint_io as checkpoint_io
+import utils.runtime as runtime
 
 
 def _write_margin_jsonl(margin_dir: Path, rows: list[dict]) -> Path:
@@ -30,7 +24,7 @@ def test_resolve_margin_dataset_repo_id_derives_from_model_repo():
         hub_model_id="org/model",
     )
 
-    assert save_utils._resolve_margin_dataset_repo_id(trainer) == "org/model-margin"
+    assert checkpoint_io._resolve_margin_dataset_repo_id(trainer) == "org/model-margin"
 
 
 def test_maybe_push_margin_dataset_summary_skips_non_margin_trainer():
@@ -38,7 +32,7 @@ def test_maybe_push_margin_dataset_summary_skips_non_margin_trainer():
         args=SimpleNamespace(trainer_type="beta_dpo", push_margin_dataset=True),
     )
 
-    result = save_utils.maybe_push_margin_dataset_summary(trainer, logging.getLogger("test_non_margin"))
+    result = checkpoint_io.maybe_push_margin_dataset_summary(trainer, logging.getLogger("test_non_margin"))
 
     assert result is None
 
@@ -59,7 +53,7 @@ def test_maybe_push_margin_dataset_summary_warns_when_margin_log_missing(caplog,
     )
 
     caplog.set_level(logging.WARNING)
-    result = save_utils.maybe_push_margin_dataset_summary(
+    result = checkpoint_io.maybe_push_margin_dataset_summary(
         trainer,
         logging.getLogger("test_missing_margin_log"),
         model_args=SimpleNamespace(model_name_or_path="base-model"),
@@ -115,8 +109,8 @@ def test_maybe_push_margin_dataset_summary_uses_override_repo_id(monkeypatch, tm
         ],
     )
 
-    monkeypatch.setattr(save_utils, "Dataset", FakeDatasetModule)
-    monkeypatch.setattr(save_utils, "HfApi", lambda: FakeApi())
+    monkeypatch.setattr(checkpoint_io, "Dataset", FakeDatasetModule)
+    monkeypatch.setattr(checkpoint_io, "HfApi", lambda: FakeApi())
 
     trainer = SimpleNamespace(
         args=SimpleNamespace(
@@ -133,7 +127,7 @@ def test_maybe_push_margin_dataset_summary_uses_override_repo_id(monkeypatch, tm
         hub_model_id="org/model",
     )
 
-    result = save_utils.maybe_push_margin_dataset_summary(
+    result = checkpoint_io.maybe_push_margin_dataset_summary(
         trainer,
         logging.getLogger("test_margin_upload"),
         model_args=SimpleNamespace(model_name_or_path="base-model"),
@@ -186,15 +180,15 @@ def test_finalize_training_pushes_margin_dataset_after_model_upload(monkeypatch,
         def create_model_card(self, **kwargs):
             events.append(("create_model_card", kwargs))
 
-    monkeypatch.setattr(run_preference_utils, "get_checkpoint", lambda _: None)
-    monkeypatch.setattr(run_preference_utils, "save_hf_compatible_training_artifacts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "get_checkpoint", lambda _: None)
+    monkeypatch.setattr(runtime, "save_hf_compatible_training_artifacts", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        run_preference_utils,
+        runtime,
         "push_prevalidated_hf_artifacts",
         lambda *args, **kwargs: events.append(("push_model",)),
     )
     monkeypatch.setattr(
-        run_preference_utils,
+        runtime,
         "maybe_push_margin_dataset_summary",
         lambda *args, **kwargs: events.append(("push_margin_dataset",)),
     )
@@ -210,7 +204,7 @@ def test_finalize_training_pushes_margin_dataset_after_model_upload(monkeypatch,
     data_args = SimpleNamespace(dataset_mixer={"dataset": 0.1})
     raw_datasets = {"train": [1, 2, 3]}
 
-    run_preference_utils.finalize_training(
+    runtime.finalize_training(
         trainer=trainer,
         training_args=training_args,
         model_args=model_args,
