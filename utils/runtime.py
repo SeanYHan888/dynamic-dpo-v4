@@ -10,7 +10,7 @@ import transformers
 from transformers import set_seed
 
 from alignment import get_checkpoint, get_datasets, get_kbit_device_map, get_quantization_config, get_tokenizer
-from alignment.data import is_openai_format, maybe_insert_system_message
+from alignment.data import is_openai_format, maybe_convert_hh_to_openai_format, maybe_insert_system_message
 from utils.checkpoint_io import (
     maybe_push_margin_dataset_summary,
     push_prevalidated_hf_artifacts,
@@ -22,8 +22,6 @@ from utils.preprocessing_cache import (
     build_prompt_preprocessing_metadata,
     configure_persistent_hf_cache,
 )
-from alignment.data import is_openai_format, maybe_convert_hh_to_openai_format, maybe_insert_system_message
-
 logger = logging.getLogger(__name__)
 
 MISTRAL_CHAT_TEMPLATE = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'].strip() + '\n\n' %}{% else %}{% set loop_messages = messages %}{% set system_message = '' %}{% endif %}{% for message in loop_messages %}{% if loop.index0 == 0 %}{% set content = system_message + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}"
