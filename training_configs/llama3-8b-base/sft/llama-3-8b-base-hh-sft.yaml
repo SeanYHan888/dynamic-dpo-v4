@@ -4,7 +4,7 @@ model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 
-# Data training arguments
+# Data arguments
 chat_template: "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
 dataset_mixer:
   Anthropic/hh-rlhf: 1.0
@@ -14,36 +14,42 @@ dataset_splits:
   - test
 preprocessing_num_workers: 12
 
-# SFT trainer config
+# Training arguments
 bf16: true
-do_eval: true
-evaluation_strategy: steps
-eval_steps: 200
 gradient_accumulation_steps: 4
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: False
-hub_model_id: jackf857/llama-3-8b-hh-harmless-base-sft
-hub_strategy: every_save
 learning_rate: 2.0e-05
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+num_train_epochs: 1
+max_steps: -1
+seed: 42
+max_seq_length: 512
+per_device_train_batch_size: 8
+per_device_eval_batch_size: 8
+remove_unused_columns: true
+
+# Evaluation and logging
+do_eval: true
+evaluation_strategy: steps
+eval_steps: 200
 log_level: info
 logging_steps: 5
 logging_strategy: steps
-lr_scheduler_type: cosine
-max_seq_length: 512
-max_steps: -1
-num_train_epochs: 1
-output_dir: /checkpoints/llama-3-8b-hh-sft
-run_name: llama-3-8b-hh-sft
+
+# Output and checkpointing
+output_dir: outputs/llama-3-8b-base-hh-harmless-sft-4xh100
+run_name: llama-3-8b-base-hh-harmless-sft-4xh100
 overwrite_output_dir: true
-per_device_eval_batch_size: 8
-per_device_train_batch_size: 8
-push_to_hub: true
-remove_unused_columns: true
-report_to:
-  - wandb
-save_strategy: "steps"
+save_strategy: "no"
 save_steps: 1000000
 save_total_limit: 1
-seed: 42
-warmup_ratio: 0.1
+
+# Hub and reporting
+push_to_hub: true
+hub_model_id: jackf857/llama-3-8b-base-hh-harmless-sft-4xh100
+hub_strategy: end
+report_to:
+  - wandb
