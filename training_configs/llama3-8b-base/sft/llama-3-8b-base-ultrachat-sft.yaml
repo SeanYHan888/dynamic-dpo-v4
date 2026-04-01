@@ -1,8 +1,8 @@
 # Model arguments
 model_name_or_path: meta-llama/Meta-Llama-3-8B
+model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
-trust_remote_code: false
 
 # Data training arguments
 dataset_mixer:
@@ -11,35 +11,34 @@ dataset_splits:
   - train_sft
   - test_sft
 preprocessing_num_workers: 8
+chat_template: "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
 
 # SFT trainer arguments
 bf16: true
-fp16: false
 do_eval: true
 eval_strategy: steps
-eval_steps: 500
+eval_steps: 200
 per_device_train_batch_size: 2
 per_device_eval_batch_size: 2
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 16
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
+hub_model_id: W-61/llama-3-8b-base-ultrachat-sft-4xh100
 learning_rate: 2.0e-05
+log_level: info
+logging_steps: 5
+logging_strategy: steps
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
 num_train_epochs: 1
 max_seq_length: 2048
 max_steps: -1
-optim: adamw_torch
-logging_steps: 10
-log_level: info
-output_dir: outputs/llama-3-8b-base-ultrachat-sft
-run_name: llama-3-8b-base-ultrachat-sft
-save_strategy: steps
-save_steps: 500
-save_total_limit: 3
+output_dir: outputs/llama-3-8b-base-ultrachat-sft-4xh100
+run_name: llama-3-8b-base-ultrachat-sft-4xh100
+overwrite_output_dir: true
 report_to:
   - wandb
+save_strategy: "no"
 seed: 42
-push_to_hub: false
-overwrite_output_dir: true
+push_to_hub: true
