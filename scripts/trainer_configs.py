@@ -24,6 +24,7 @@ class TokenizedPreferenceConfig(DPOConfig):
     beta: float = field(default=0.1)
     label_smoothing: float = field(default=0.0)
     loss_type: str = field(default="sigmoid")
+    non_finite_logits_handling: Literal["sanitize", "error"] = field(default="sanitize")
     label_pad_token_id: int = field(default=-100)
     padding_value: Optional[int] = field(default=None)
     is_encoder_decoder: Optional[bool] = field(default=None)
@@ -37,6 +38,8 @@ class TokenizedPreferenceConfig(DPOConfig):
             raise ValueError("precompute_ref_batch_size must be > 0 when provided.")
         if self.precompute_ref_eval_batch_size is not None and self.precompute_ref_eval_batch_size <= 0:
             raise ValueError("precompute_ref_eval_batch_size must be > 0 when provided.")
+        if self.non_finite_logits_handling not in {"sanitize", "error"}:
+            raise ValueError("non_finite_logits_handling must be one of {'sanitize', 'error'}.")
         super().__post_init__()
 
 

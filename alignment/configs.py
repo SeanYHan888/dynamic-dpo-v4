@@ -242,6 +242,18 @@ class DataArguments:
             )
         },
     )
+    preprocessing_log_samples: int = field(
+        default=0,
+        metadata={"help": "Number of processed train samples to save to a preprocessing JSONL log file."},
+    )
+    preprocessing_log_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional directory for preprocessing sample logs. Defaults to <output_dir>/preprocessing_logs."},
+    )
+
+    def __post_init__(self):
+        if self.preprocessing_log_samples < 0:
+            raise ValueError("preprocessing_log_samples must be >= 0.")
 
 
 @dataclass

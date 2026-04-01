@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 from accelerate import PartialState
 from accelerate.utils import is_deepspeed_available
@@ -379,6 +380,7 @@ class TokenizedDPOTrainer(Trainer):
         self.precompute_ref_logps = bool(
             getattr(args, "precompute_ref_log_probs", False) or getattr(args, "precompute_ref_logps", False)
         )
+        self.non_finite_logits_handling = getattr(args, "non_finite_logits_handling", "sanitize")
         self._precompute_ref_model_path = ref_model if isinstance(ref_model, str) and self.precompute_ref_logps else None
         self._precompute_ref_model = None
         self._precompute_ref_model_init_kwargs = self._build_precompute_ref_model_init_kwargs(model_init_kwargs)
@@ -542,6 +544,7 @@ class TokenizedDPOTrainer(Trainer):
                     device_placement=True,
                     evaluation_mode=True,
                 )
+                self._sync_unwrapped_model_from_rank0(self.ref_model, model_name="reference")
 
     def _prepare_deepspeed(self, model: PreTrainedModel):
         deepspeed_plugin = self.accelerator.state.deepspeed_plugin
@@ -565,6 +568,21 @@ class TokenizedDPOTrainer(Trainer):
         model, *_ = deepspeed.initialize(model=model, config=config_kwargs)
         model.eval()
         return model
+
+    def _is_distributed_run(self) -> bool:
+        return dist.is_available() and dist.is_initialized() and self.accelerator.num_processes > 1
+
+    def _sync_unwrapped_model_from_rank0(self, model: nn.Module, model_name: str) -> None:
+        if not self._is_distributed_run():
+            return
+
+        # Manually loaded auxiliary models are not FSDP-wrapped, so they do not benefit from
+        # rank-0 state syncing when Accelerate's FSDP CPU-RAM-efficient loading is enabled.
+        for _, tensor in model.named_parameters():
+            dist.broadcast(tensor.data, src=0)
+        for _, tensor in model.named_buffers():
+            dist.broadcast(tensor.data, src=0)
+        dist.barrier()
 
     @staticmethod
     def _build_precompute_ref_model_init_kwargs(model_init_kwargs: Dict[str, Any]) -> Dict[str, Any]:
@@ -592,6 +610,7 @@ class TokenizedDPOTrainer(Trainer):
         if getattr(self.args, "disable_dropout", False):
             disable_dropout_in_model(ref_model)
         ref_model.to(device=self.accelerator.device)
+        self._sync_unwrapped_model_from_rank0(ref_model, model_name="reference_precompute")
         ref_model.eval()
         self._precompute_ref_model = ref_model
         return self._precompute_ref_model
@@ -626,6 +645,7 @@ class TokenizedDPOTrainer(Trainer):
                 padded_batch,
                 average_log_prob=False,
                 force_logits_to_float32=self.precompute_ref_logps,
+                logit_source="reference_precompute" if self.precompute_ref_logps else "reference",
             )
         return ref_chosen_logps, ref_rejected_logps
 
@@ -804,6 +824,7 @@ class TokenizedDPOTrainer(Trainer):
         batch: Dict[str, Union[List, torch.LongTensor]],
         average_log_prob: bool = False,
         force_logits_to_float32: bool = False,
+        logit_source: str = "unknown",
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.LongTensor]:
         model_device = self._get_model_device(model)
         if model_device is None or model_device.type == "cpu":
@@ -834,6 +855,7 @@ class TokenizedDPOTrainer(Trainer):
         ).logits
         if force_logits_to_float32:
             all_logits = all_logits.float()
+        all_logits = self._handle_non_finite_logits(all_logits, logit_source=logit_source)
 
         all_logps = self.get_batch_logps(
             all_logits,
@@ -884,6 +906,10 @@ class TokenizedDPOTrainer(Trainer):
     @staticmethod
     def _compute_token_logps(logits: torch.FloatTensor, labels: torch.LongTensor) -> torch.FloatTensor:
         if not torch.isfinite(logits).all():
+            warnings.warn(
+                "Detected non-finite logits after the forward-pass safety check; sanitizing logits as a fallback.",
+                RuntimeWarning,
+            )
             logits = TokenizedDPOTrainer._sanitize_logits_for_logps(logits)
             selected_logits = torch.gather(logits, dim=2, index=labels.unsqueeze(2)).squeeze(2)
             log_normalizers = TokenizedDPOTrainer._chunked_logsumexp_fp32(logits)
@@ -905,12 +931,6 @@ class TokenizedDPOTrainer(Trainer):
 
     @staticmethod
     def _sanitize_logits_for_logps(logits: torch.FloatTensor) -> torch.FloatTensor:
-        non_finite_count = int((~torch.isfinite(logits)).sum().item())
-        warnings.warn(
-            f"Detected {non_finite_count} non-finite logits while computing token log-probs; "
-            "sanitizing logits to keep reference/preference scoring numerically stable.",
-            RuntimeWarning,
-        )
         sanitized_logits = torch.nan_to_num(logits.float(), nan=0.0, posinf=1e4, neginf=-1e4)
         return sanitized_logits.clamp_(min=-1e4, max=1e4)
 
@@ -925,6 +945,32 @@ class TokenizedDPOTrainer(Trainer):
                 chunk_logsumexp if log_normalizers is None else torch.logaddexp(log_normalizers, chunk_logsumexp)
             )
         return log_normalizers
+
+    def _format_non_finite_logits_message(self, logits: torch.FloatTensor, logit_source: str) -> str:
+        non_finite_count = int((~torch.isfinite(logits)).sum().item())
+        nan_count = int(torch.isnan(logits).sum().item())
+        posinf_count = int(torch.isposinf(logits).sum().item())
+        neginf_count = int(torch.isneginf(logits).sum().item())
+        return (
+            f"Detected {non_finite_count} non-finite values in {logit_source} logits before token log-prob computation "
+            f"(global_step={int(self.state.global_step)}, epoch={self.state.epoch}, process_index={self.accelerator.process_index}, "
+            f"shape={tuple(logits.shape)}, dtype={logits.dtype}, device={logits.device}, nan={nan_count}, "
+            f"posinf={posinf_count}, neginf={neginf_count})."
+        )
+
+    def _handle_non_finite_logits(self, logits: torch.FloatTensor, logit_source: str) -> torch.FloatTensor:
+        if torch.isfinite(logits).all():
+            return logits
+
+        message = self._format_non_finite_logits_message(logits, logit_source)
+        if self.non_finite_logits_handling == "error":
+            raise ValueError(message)
+
+        warnings.warn(
+            message + " Sanitizing logits to keep reference/preference scoring numerically stable.",
+            RuntimeWarning,
+        )
+        return TokenizedDPOTrainer._sanitize_logits_for_logps(logits)
 
     def compute_loss(
         self,

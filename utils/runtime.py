@@ -1,6 +1,8 @@
 import logging
+import json
 import random
 import sys
+from pathlib import Path
 from typing import Iterable
 
 import torch
@@ -20,6 +22,7 @@ from utils.preprocessing_cache import (
     build_prompt_preprocessing_metadata,
     configure_persistent_hf_cache,
 )
+from alignment.data import is_openai_format, maybe_convert_hh_to_openai_format, maybe_insert_system_message
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,8 @@ def apply_preference_chat_template(
 ):
     if change_template == "mistral":
         tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
+
+    example = maybe_convert_hh_to_openai_format(example)
 
     if not all(key in example.keys() for key in ("chosen", "rejected")):
         raise ValueError(
@@ -90,6 +95,66 @@ def setup_run(model_args, data_args, training_args, run_logger):
     return last_checkpoint
 
 
+def _is_main_process(training_args) -> bool:
+    return getattr(training_args, "process_index", 0) == 0
+
+
+def _resolve_preprocessing_log_dir(data_args, training_args) -> Path:
+    if data_args.preprocessing_log_dir:
+        return Path(data_args.preprocessing_log_dir).expanduser()
+    return Path(training_args.output_dir) / "preprocessing_logs"
+
+
+def _select_preprocessing_sample_indices(dataset_size: int, sample_count: int, seed: int) -> list[int]:
+    if dataset_size <= 0 or sample_count <= 0:
+        return []
+    effective_count = min(dataset_size, sample_count)
+    return random.Random(seed).sample(range(dataset_size), k=effective_count)
+
+
+def _build_processed_sample_record(dataset, index: int, split_name: str) -> dict:
+    sample = dataset[index]
+    return {
+        "sample_index": index,
+        "split": split_name,
+        "prompt": sample["prompt"],
+        "chosen": sample["chosen"],
+        "rejected": sample["rejected"],
+    }
+
+
+def _log_processed_train_samples(raw_datasets, data_args, training_args, run_logger) -> None:
+    if "train" not in raw_datasets or len(raw_datasets["train"]) == 0 or not _is_main_process(training_args):
+        return
+
+    train_dataset = raw_datasets["train"]
+    sample_indices = _select_preprocessing_sample_indices(
+        dataset_size=len(train_dataset),
+        sample_count=max(1, data_args.preprocessing_log_samples),
+        seed=training_args.seed,
+    )
+    terminal_record = _build_processed_sample_record(train_dataset, sample_indices[0], split_name="train")
+    run_logger.info(
+        "Processed train sample %(sample_index)s:\n\nPrompt:\n%(prompt)s\n\nChosen:\n%(chosen)s\n\nRejected:\n%(rejected)s",
+        terminal_record,
+    )
+
+    if data_args.preprocessing_log_samples <= 0:
+        return
+
+    log_dir = _resolve_preprocessing_log_dir(data_args, training_args)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "train_samples.jsonl"
+    records = [
+        _build_processed_sample_record(train_dataset, index, split_name="train")
+        for index in sample_indices[: data_args.preprocessing_log_samples]
+    ]
+    with log_path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    run_logger.info(f"Saved {len(records)} processed train samples to {log_path}")
+
+
 def prepare_preference_datasets(model_args, data_args, training_args, run_logger):
     configure_persistent_hf_cache(data_args, run_logger)
     raw_datasets = get_datasets(
@@ -130,12 +195,7 @@ def prepare_preference_datasets(model_args, data_args, training_args, run_logger
             {"text_prompt": "prompt", "text_chosen": "chosen", "text_rejected": "rejected"}
         )
 
-    if "train" in raw_datasets:
-        sample_count = min(3, len(raw_datasets["train"]))
-        for index in random.sample(range(len(raw_datasets["train"])), sample_count):
-            run_logger.info(f"Prompt sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['prompt']}")
-            run_logger.info(f"Chosen sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['chosen']}")
-            run_logger.info(f"Rejected sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['rejected']}")
+    _log_processed_train_samples(raw_datasets, data_args, training_args, run_logger)
 
     training_args.model_init_kwargs = build_model_init_kwargs(model_args, training_args)
     return raw_datasets, tokenizer
