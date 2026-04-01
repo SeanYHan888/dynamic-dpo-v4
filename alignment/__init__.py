@@ -21,7 +21,6 @@ __all__ = [
     "SFTConfig",
     "apply_chat_template",
     "get_datasets",
-    "decontaminate_humaneval",
     "get_checkpoint",
     "get_kbit_device_map",
     "get_peft_config",
