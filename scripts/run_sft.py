@@ -47,6 +47,7 @@ from alignment import (
 )
 from alignment.decontaminate import decontaminate_humaneval
 from utils.runtime import ensure_hf_model_access
+from utils.checkpoint_io import push_prevalidated_hf_artifacts, save_hf_compatible_training_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -222,8 +223,8 @@ def main():
     # Save model and create model card
     ##################################
     logger.info("*** Save model ***")
-    trainer.save_model(training_args.output_dir)
-    logger.info(f"Model saved to {training_args.output_dir}")
+    save_hf_compatible_training_artifacts(trainer, training_args.output_dir, logger)
+    logger.info(f"Saved validated HF-compatible model artifacts to {training_args.output_dir}")
 
     # Save everything else on main process
     kwargs = {
@@ -250,7 +251,11 @@ def main():
 
     if training_args.push_to_hub is True:
         logger.info("Pushing to hub...")
-        trainer.push_to_hub(**kwargs)
+        push_prevalidated_hf_artifacts(
+            trainer,
+            training_args.output_dir,
+            logger,
+        )
 
     logger.info("*** Training complete ***")
 

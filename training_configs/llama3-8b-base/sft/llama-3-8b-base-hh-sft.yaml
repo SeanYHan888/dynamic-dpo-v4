@@ -48,7 +48,7 @@ save_steps: 1000000
 save_total_limit: 1
 
 # Hub and reporting
-push_to_hub: true
+push_to_hub: false
 hub_model_id: W-61/llama-3-8b-base-hh-harmless-sft-4xh100
 hub_strategy: end
 report_to:

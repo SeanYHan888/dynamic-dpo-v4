@@ -44,7 +44,7 @@ overwrite_output_dir: true
 save_strategy: "no"
 
 # Hub and reporting
-push_to_hub: true
+push_to_hub: false
 hub_model_id: W-61/llama-3-8b-base-ultrachat-sft-4xh100
 report_to:
   - wandb
