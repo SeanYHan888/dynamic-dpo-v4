@@ -8,6 +8,8 @@ from typing import Iterable
 import torch
 import transformers
 from transformers import set_seed
+from huggingface_hub import HfFolder, hf_hub_download
+from huggingface_hub.utils import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
 
 from alignment import get_checkpoint, get_datasets, get_kbit_device_map, get_quantization_config, get_tokenizer
 from alignment.data import is_openai_format, maybe_convert_hh_to_openai_format, maybe_insert_system_message
@@ -26,6 +28,98 @@ logger = logging.getLogger(__name__)
 
 MISTRAL_CHAT_TEMPLATE = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'].strip() + '\n\n' %}{% else %}{% set loop_messages = messages %}{% set system_message = '' %}{% endif %}{% for message in loop_messages %}{% if loop.index0 == 0 %}{% set content = system_message + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}"
 PREFERENCE_COLUMNS = ["messages", "chosen", "rejected", "prompt", "completion", "label"]
+
+
+def _is_local_repo_path(repo_id_or_path: str | None) -> bool:
+    return bool(repo_id_or_path) and Path(repo_id_or_path).expanduser().exists()
+
+
+def _build_hf_access_error(
+    *,
+    repo_id: str,
+    revision: str,
+    filename: str,
+    token_present: bool,
+    error: Exception,
+) -> str:
+    lines = [
+        f"Hugging Face preflight failed for `{repo_id}` (revision `{revision}`).",
+        f"The run needs `{filename}` from that repo before training can start.",
+    ]
+
+    if isinstance(error, GatedRepoError):
+        lines.append("This repo is gated, and the current shell is not authenticated with an account that can read it.")
+    elif isinstance(error, RepositoryNotFoundError):
+        lines.append("The repo could not be found from the current shell. This usually means the repo name is wrong or the repo is private and this shell is not authenticated.")
+    elif isinstance(error, HfHubHTTPError):
+        lines.append(f"Hugging Face Hub returned HTTP {error.response.status_code}.")
+    else:
+        lines.append(f"Underlying error: {error}")
+
+    if token_present:
+        lines.append("A Hugging Face token is present, so the most likely issue is that this account has not been granted access to the repo.")
+    else:
+        lines.append("No Hugging Face token was found in this shell.")
+
+    lines.extend(
+        [
+            "Next steps:",
+            f"1. Confirm access at https://huggingface.co/{repo_id}",
+            "2. Authenticate in this shell with `hf auth login` or `huggingface-cli login`",
+            "3. Relaunch the training command after `huggingface-cli whoami` shows the expected account",
+            "4. Or point `model_name_or_path` at a local checkpoint or another accessible repo",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def ensure_hf_model_access(model_args, run_logger) -> None:
+    repo_id = getattr(model_args, "model_name_or_path", None)
+    revision = getattr(model_args, "model_revision", "main")
+    token = HfFolder.get_token()
+
+    if repo_id is None or _is_local_repo_path(repo_id):
+        return
+
+    try:
+        hf_hub_download(
+            repo_id=repo_id,
+            filename="config.json",
+            revision=revision,
+            token=token,
+        )
+    except (GatedRepoError, RepositoryNotFoundError, HfHubHTTPError) as error:
+        raise RuntimeError(
+            _build_hf_access_error(
+                repo_id=repo_id,
+                revision=revision,
+                filename="config.json",
+                token_present=bool(token),
+                error=error,
+            )
+        ) from error
+
+    tokenizer_repo_id = getattr(model_args, "tokenizer_name_or_path", None)
+    if tokenizer_repo_id is None or tokenizer_repo_id == repo_id or _is_local_repo_path(tokenizer_repo_id):
+        return
+
+    try:
+        hf_hub_download(
+            repo_id=tokenizer_repo_id,
+            filename="tokenizer_config.json",
+            revision=revision,
+            token=token,
+        )
+    except (GatedRepoError, RepositoryNotFoundError, HfHubHTTPError) as error:
+        raise RuntimeError(
+            _build_hf_access_error(
+                repo_id=tokenizer_repo_id,
+                revision=revision,
+                filename="tokenizer_config.json",
+                token_present=bool(token),
+                error=error,
+            )
+        ) from error
 
 
 def apply_preference_chat_template(
@@ -84,6 +178,7 @@ def setup_run(model_args, data_args, training_args, run_logger):
     run_logger.info(f"Model parameters {model_args}")
     run_logger.info(f"Data parameters {data_args}")
     run_logger.info(f"Training/evaluation parameters {training_args}")
+    ensure_hf_model_access(model_args, run_logger)
 
     last_checkpoint = get_checkpoint(training_args)
     if last_checkpoint is not None and training_args.resume_from_checkpoint is None:

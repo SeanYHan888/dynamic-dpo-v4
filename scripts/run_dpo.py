@@ -38,6 +38,7 @@ from alignment import (
 from alignment.decontaminate import decontaminate_humaneval
 from peft import PeftConfig, PeftModel
 from trl import DPOTrainer
+from utils.runtime import ensure_hf_model_access
 
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ def main():
     logger.info(f"Model parameters {model_args}")
     logger.info(f"Data parameters {data_args}")
     logger.info(f"Training/evaluation parameters {training_args}")
+    ensure_hf_model_access(model_args, logger)
 
     # Check for last checkpoint
     last_checkpoint = get_checkpoint(training_args)

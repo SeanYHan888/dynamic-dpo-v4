@@ -55,10 +55,13 @@ def parse_hh_transcript(transcript: str) -> List[Dict[str, str]]:
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(transcript)
         content = transcript[start:end].strip()
         if not content:
-            raise ValueError("HH transcript contains an empty turn.")
+            continue
 
         role = "user" if match.group(1) == "Human" else "assistant"
         messages.append({"role": role, "content": content})
+
+    if not messages:
+        raise ValueError("HH transcript does not contain any non-empty turns.")
 
     return messages
 
