@@ -197,8 +197,6 @@ def prepare_preference_datasets(model_args, data_args, training_args, run_logger
 
     training_args.model_init_kwargs = build_model_init_kwargs(model_args, training_args)
     return raw_datasets, tokenizer
-
-
 def build_model_init_kwargs(model_args, training_args):
     torch_dtype = normalize_torch_dtype(model_args.torch_dtype)
     quantization_config = get_quantization_config(model_args)
@@ -243,7 +241,9 @@ def finalize_training(trainer, training_args, model_args, data_args, raw_dataset
         trainer.model.config.use_cache = True
         trainer.model.config.save_pretrained(training_args.output_dir)
 
-    if training_args.do_eval:
+    if training_args.do_eval and "test" not in raw_datasets:
+        run_logger.warning("Skipping evaluation because no `test` split was loaded.")
+    elif training_args.do_eval:
         run_logger.info("*** Evaluate ***")
         metrics = trainer.evaluate()
         metrics["eval_samples"] = len(raw_datasets["test"])

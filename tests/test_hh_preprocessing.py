@@ -1,20 +1,10 @@
 # coding=utf-8
-import sys
-from pathlib import Path
-
 import pytest
 from datasets import Dataset
 
 from alignment import DataArguments, get_datasets
-from alignment.data import maybe_convert_hh_to_openai_format, parse_hh_transcript
-
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = REPO_ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from run_preference_utils import apply_preference_chat_template
+from alignment.data import apply_chat_template, maybe_convert_hh_to_openai_format, parse_hh_transcript
+from utils.runtime import apply_preference_chat_template
 
 
 class DummyTokenizer:
@@ -117,6 +107,21 @@ def test_apply_preference_chat_template_accepts_raw_hh_examples():
         "assistant:Why don't penguins fly? Because they're not tall enough to be pilots."
     )
     assert formatted["text_rejected"] == "assistant:Penguins are bad at jokes."
+
+
+def test_apply_chat_template_accepts_raw_hh_examples_for_sft():
+    tokenizer = DummyTokenizer()
+
+    formatted = apply_chat_template(
+        _build_hh_example(),
+        tokenizer=tokenizer,
+        task="sft",
+        auto_insert_empty_system_msg=True,
+    )
+
+    assert formatted["text"].startswith("<s>system: || user:Tell me a joke.")
+    assert "assistant:Why don't penguins fly? Because they're not tall enough to be pilots." in formatted["text"]
+    assert "assistant:Penguins are bad at jokes." not in formatted["text"]
 
 
 def test_get_datasets_uses_data_dir_for_anthropic_hh(monkeypatch):

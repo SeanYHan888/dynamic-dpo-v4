@@ -1,19 +1,12 @@
 import json
 import logging
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 from datasets import Dataset, DatasetDict
 
 from alignment import DataArguments
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = REPO_ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import run_preference_utils
+from utils import runtime as run_preference_utils
 
 
 class DummyTokenizer:

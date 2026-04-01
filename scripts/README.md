@@ -8,6 +8,7 @@ This directory is intentionally flat and contains only training entrypoints, tra
 - `run_alpha_dpo.py`
 - `run_beta_dpo.py`
 - `run_margin_dpo.py`
+- `run_sft.py`
 
 Each runner owns CLI orchestration only:
 

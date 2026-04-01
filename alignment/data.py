@@ -108,13 +108,50 @@ def maybe_convert_hh_to_openai_format(example: Dict[str, Any]) -> Dict[str, Any]
     return example
 
 
+def maybe_convert_sft_example_to_openai_format(example: Dict[str, Any]) -> Dict[str, Any]:
+    if is_openai_format(example.get("messages")):
+        return example
+
+    if isinstance(example.get("chosen"), str) and "Human:" in example["chosen"] and "Assistant:" in example["chosen"]:
+        example["messages"] = parse_hh_transcript(example["chosen"])
+        return example
+
+    if is_openai_format(example.get("prompt")) and is_openai_format(example.get("chosen")):
+        example["messages"] = example["prompt"] + example["chosen"]
+        return example
+
+    if is_openai_format(example.get("chosen")):
+        example["messages"] = example["chosen"]
+        return example
+
+    if is_openai_format(example.get("prompt")) and is_openai_format(example.get("completion")):
+        example["messages"] = example["prompt"] + example["completion"]
+        return example
+
+    return example
+
+
+
 def apply_chat_template(
     example,
     tokenizer,
     task: Literal["sft", "generation", "rm", "dpo"],
     auto_insert_empty_system_msg: bool = True,
 ):
-    if task in ["sft", "generation"]:
+    if task == "sft":
+        example = maybe_convert_sft_example_to_openai_format(example)
+        if not is_openai_format(example.get("messages")):
+            raise ValueError(
+                "Could not format example as dialogue for `sft` task! Require either `messages`, "
+                "`chosen`, `[prompt, chosen]`, or `[prompt, completion]` keys in OpenAI format."
+            )
+
+        messages = example["messages"]
+        # We add an empty system message if there is none
+        if auto_insert_empty_system_msg:
+            maybe_insert_system_message(messages, tokenizer)
+        example["text"] = tokenizer.apply_chat_template(messages, tokenize=False)
+    elif task == "generation":
         messages = example["messages"]
         # We add an empty system message if there is none
         if auto_insert_empty_system_msg:

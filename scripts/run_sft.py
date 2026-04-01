@@ -20,6 +20,7 @@ Supervised fine-tuning script for decoder language models.
 import logging
 import random
 import sys
+from pathlib import Path
 
 import datasets
 import torch
@@ -27,13 +28,16 @@ import transformers
 from transformers import AutoModelForCausalLM, set_seed
 from trl import SFTTrainer, setup_chat_format
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from alignment import (
     DataArguments,
     H4ArgumentParser,
     ModelArguments,
     SFTConfig,
     apply_chat_template,
-    decontaminate_humaneval,
     get_checkpoint,
     get_datasets,
     get_kbit_device_map,
@@ -41,6 +45,7 @@ from alignment import (
     get_quantization_config,
     get_tokenizer,
 )
+from alignment.decontaminate import decontaminate_humaneval
 
 logger = logging.getLogger(__name__)
 
