@@ -219,6 +219,12 @@ class DataArguments:
         default=None,
         metadata={"help": "List of dataset config names. If given must be the same length as 'dataset_mixer' keys."},
     )
+    dataset_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Optional dataset directory/subset name. For Anthropic/hh-rlhf this maps to the Hugging Face `data_dir` argument."
+        },
+    )
     preprocessing_num_workers: Optional[int] = field(
         default=None,
         metadata={"help": "The number of processes to use for the preprocessing."},
@@ -254,6 +260,10 @@ class DataArguments:
     def __post_init__(self):
         if self.preprocessing_log_samples < 0:
             raise ValueError("preprocessing_log_samples must be >= 0.")
+        if self.dataset_dir is not None:
+            if self.dataset_configs is not None:
+                raise ValueError("Specify only one of dataset_configs or dataset_dir.")
+            self.dataset_configs = [self.dataset_dir]
 
 
 @dataclass
