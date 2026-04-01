@@ -1,46 +1,49 @@
 # Model arguments
 model_name_or_path: meta-llama/Meta-Llama-3-8B
+model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
-trust_remote_code: false
 
 # Data training arguments
+chat_template: "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
 dataset_mixer:
   Anthropic/hh-rlhf: 1.0
 dataset_dir: harmless-base
 dataset_splits:
   - train
   - test
-preprocessing_num_workers: 8
+preprocessing_num_workers: 12
 
-# SFT trainer arguments
+# SFT trainer config
 bf16: true
-fp16: false
 do_eval: true
-eval_strategy: steps
-eval_steps: 500
-per_device_train_batch_size: 2
-per_device_eval_batch_size: 2
-gradient_accumulation_steps: 8
+evaluation_strategy: steps
+eval_steps: 200
+gradient_accumulation_steps: 4
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
-  use_reentrant: false
+  use_reentrant: False
+hub_model_id: jackf857/llama-3-8b-hh-harmless-base-sft
+hub_strategy: every_save
 learning_rate: 2.0e-05
-lr_scheduler_type: cosine
-warmup_ratio: 0.1
-num_train_epochs: 1
-max_seq_length: 500
-max_steps: -1
-optim: adamw_torch
-logging_steps: 10
 log_level: info
-output_dir: outputs/llama-3-8b-base-hh-harmless-base-sft
-run_name: llama-3-8b-base-hh-harmless-base-sft
-save_strategy: steps
-save_steps: 500
-save_total_limit: 3
+logging_steps: 5
+logging_strategy: steps
+lr_scheduler_type: cosine
+max_seq_length: 512
+max_steps: -1
+num_train_epochs: 1
+output_dir: /checkpoints/llama-3-8b-hh-sft
+run_name: llama-3-8b-hh-sft
+overwrite_output_dir: true
+per_device_eval_batch_size: 8
+per_device_train_batch_size: 8
+push_to_hub: true
+remove_unused_columns: true
 report_to:
   - wandb
+save_strategy: "steps"
+save_steps: 1000000
+save_total_limit: 1
 seed: 42
-push_to_hub: false
-overwrite_output_dir: true
+warmup_ratio: 0.1
