@@ -22,7 +22,7 @@ beta: 0.01
 require_explicit_ref_model: true
 f_divergence_type: reverse_kl
 f_alpha_divergence_coef: 1.0
-margin_log_path: outputs/llama-3-8b-base-margin-dpo-4xh100-pilot/margin_logs
+margin_log_path: /workplace/outputs/llama-3-8b-base-margin-dpo-4xh100-pilot/margin_logs
 margin_log_steps: 5
 margin_save_full: false
 non_finite_logits_handling: error
@@ -64,4 +64,4 @@ report_to:
   - wandb
 seed: 42
 push_to_hub: true
-hub_model_id: llama-3-8b-base-margin-dpo-4xh100-pilot
+hub_model_id: jackf857/llama-3-8b-base-margin-dpo-4xh100
