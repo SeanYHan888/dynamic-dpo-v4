@@ -41,8 +41,8 @@ learning_rate: 5.0e-7
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
 num_train_epochs: 1
-max_length: 1024
-max_prompt_length: 512
+max_length: 2048
+max_prompt_length: 1600
 optim: adamw_torch
 
 tokenization_mode: online
