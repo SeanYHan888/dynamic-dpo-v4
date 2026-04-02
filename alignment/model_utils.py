@@ -21,9 +21,8 @@ from transformers import AutoTokenizer, BitsAndBytesConfig, PreTrainedTokenizer
 from transformers.trainer_utils import get_last_checkpoint
 
 from accelerate import Accelerator
+from huggingface_hub.errors import HFValidationError, RepositoryNotFoundError
 from huggingface_hub import list_repo_files
-from huggingface_hub.utils._errors import RepositoryNotFoundError
-from huggingface_hub.utils._validators import HFValidationError
 from peft import LoraConfig, PeftConfig
 
 from .configs import DataArguments, DPOConfig, ModelArguments, SFTConfig
@@ -65,6 +64,33 @@ def get_quantization_config(model_args: ModelArguments) -> BitsAndBytesConfig | 
         quantization_config = None
 
     return quantization_config
+
+
+def get_active_chat_template(tokenizer: PreTrainedTokenizer) -> str:
+    chat_template = getattr(tokenizer, "chat_template", None)
+    if chat_template is None:
+        chat_template = getattr(tokenizer, "default_chat_template", None)
+    return chat_template or ""
+
+
+def tokenizer_needs_chat_format_setup(tokenizer: PreTrainedTokenizer) -> bool:
+    active_chat_template = get_active_chat_template(tokenizer)
+    if "<|im_start|>" not in active_chat_template:
+        return False
+
+    convert_tokens_to_ids = getattr(tokenizer, "convert_tokens_to_ids", None)
+    if not callable(convert_tokens_to_ids):
+        return True
+
+    unk_token_id = getattr(tokenizer, "unk_token_id", None)
+    for token in ("<|im_start|>", "<|im_end|>"):
+        token_id = convert_tokens_to_ids(token)
+        if token_id is None:
+            return True
+        if unk_token_id is not None and token_id == unk_token_id:
+            return True
+
+    return getattr(tokenizer, "pad_token_id", None) is None
 
 
 def get_tokenizer(

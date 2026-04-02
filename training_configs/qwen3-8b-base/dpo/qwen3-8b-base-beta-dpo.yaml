@@ -1,0 +1,58 @@
+# Model arguments
+model_name_or_path: outputs/qwen3-8b-base-ultrachat-sft-4xh100
+torch_dtype: null
+attn_implementation: flash_attention_2
+
+# Data training arguments
+dataset_mixer:
+  HuggingFaceH4/ultrafeedback_binarized: 1.0
+dataset_splits:
+  - train_prefs
+  - test_prefs
+preprocessing_num_workers: 12
+dataset_num_proc: 12
+use_persistent_hf_cache: false
+hf_cache_dir: null
+
+# Beta-DPO trainer arguments
+bf16: true
+beta: 0.1
+rho: 0.8
+alpha: 0.6
+ema_momentum: 0.9
+beta_min: 1.0e-3
+sync_global_mask: true
+deterministic_eval: true
+require_equal_local_batch_size: true
+do_eval: true
+evaluation_strategy: steps
+eval_steps: 200
+gradient_accumulation_steps: 8
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+hub_model_id: qwen3-8b-base-beta-dpo-4xh100
+learning_rate: 5.0e-7
+log_level: info
+logging_steps: 10
+lr_scheduler_type: linear
+max_length: 2048
+max_prompt_length: 1792
+tokenization_mode: online
+tokenization_batch_size: 64
+reuse_tokenized_dataset: false
+tokenized_dataset_cache_dir: null
+num_train_epochs: 1
+optim: rmsprop
+output_dir: outputs/qwen3-8b-base-beta-dpo-4xh100
+run_name: qwen3-8b-base-beta-dpo-4xh100
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 4
+push_to_hub: false
+save_strategy: steps
+save_steps: 1000000
+report_to:
+  - wandb
+save_total_limit: 20
+seed: 42
+warmup_ratio: 0.05

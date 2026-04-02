@@ -9,7 +9,7 @@ import torch
 import transformers
 from transformers import set_seed
 from huggingface_hub import HfFolder, hf_hub_download
-from huggingface_hub.utils import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
+from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
 
 from alignment import get_checkpoint, get_datasets, get_kbit_device_map, get_quantization_config, get_tokenizer
 from alignment.data import is_openai_format, maybe_convert_hh_to_openai_format, maybe_insert_system_message

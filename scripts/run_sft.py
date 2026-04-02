@@ -44,6 +44,7 @@ from alignment import (
     get_peft_config,
     get_quantization_config,
     get_tokenizer,
+    tokenizer_needs_chat_format_setup,
 )
 from alignment.decontaminate import decontaminate_humaneval
 from utils.runtime import ensure_hf_model_access
@@ -138,10 +139,7 @@ def main():
 
     model = model_args.model_name_or_path
     # For ChatML we need to add special tokens and resize the embedding layer
-    if (
-        "<|im_start|>" in tokenizer.chat_template
-        and "gemma-tokenizer-chatml" not in tokenizer.name_or_path
-    ):
+    if tokenizer_needs_chat_format_setup(tokenizer) and "gemma-tokenizer-chatml" not in tokenizer.name_or_path:
         model = AutoModelForCausalLM.from_pretrained(
             model_args.model_name_or_path, **model_kwargs
         )

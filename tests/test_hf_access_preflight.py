@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from huggingface_hub.utils import GatedRepoError
+from huggingface_hub.errors import GatedRepoError
 from requests import Response
 
 from utils import runtime
