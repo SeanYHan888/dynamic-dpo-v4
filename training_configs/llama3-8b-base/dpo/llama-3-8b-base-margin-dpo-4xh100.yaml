@@ -1,5 +1,5 @@
 # Model arguments
-model_name_or_path: princeton-nlp/Llama-3-Base-8B-SFT
+model_name_or_path: W-61/llama-3-8b-base-ultrachat-sft-4xh100
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 
@@ -28,7 +28,7 @@ margin_save_full: false
 non_finite_logits_handling: error
 precompute_ref_log_probs: false
 
-per_device_train_batch_size: 1
+per_device_train_batch_size: 2
 per_device_eval_batch_size: 2
 gradient_accumulation_steps: 16
 dataloader_drop_last: true
