@@ -199,7 +199,7 @@ def test_tokenizer_without_chatml_tokens_still_needs_setup():
     assert tokenizer_needs_chat_format_setup(MissingChatMlSetupTokenizer()) is True
 
 
-def test_prepare_preference_datasets_keeps_mistral_override(monkeypatch, tmp_path):
+def test_prepare_preference_datasets_does_not_override_mistral_template(monkeypatch, tmp_path):
     tokenizer = RuntimeDummyTokenizer()
 
     monkeypatch.setattr(
@@ -233,7 +233,7 @@ def test_prepare_preference_datasets_keeps_mistral_override(monkeypatch, tmp_pat
         run_logger=logging.getLogger("test_mistral_override"),
     )
 
-    assert tokenizer.chat_template == run_preference_utils.MISTRAL_CHAT_TEMPLATE
+    assert tokenizer.chat_template == "system"
 
 
 def test_qwen25_sft_yaml_parses_without_custom_chat_template():

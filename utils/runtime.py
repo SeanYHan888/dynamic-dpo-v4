@@ -128,8 +128,9 @@ def apply_preference_chat_template(
     auto_insert_empty_system_msg: bool = True,
     change_template=None,
 ):
-    if change_template == "mistral":
-        tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
+    # Keep the legacy kwarg for call-site compatibility, but do not override
+    # tokenizer.chat_template based on the model name anymore.
+    del change_template
 
     example = maybe_convert_hh_to_openai_format(example)
 
@@ -263,9 +264,9 @@ def prepare_preference_datasets(model_args, data_args, training_args, run_logger
 
     data_args.truncation_side = "left"
     tokenizer = get_tokenizer(model_args, data_args)
-    change_template = "mistral" if "mistral" in model_args.model_name_or_path.lower() else None
-    if change_template == "mistral":
-        tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
+    # Preserve the formatting metadata path, but keep the Mistral-specific
+    # template override disabled.
+    change_template = None
     attach_prompt_preprocessing_metadata(
         training_args,
         build_prompt_preprocessing_metadata(tokenizer, data_args, apply_preference_chat_template),
