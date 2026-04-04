@@ -92,6 +92,8 @@ class MarginDPOConfig(TokenizedPreferenceConfig):
 
 @dataclass
 class EpsilonDPOConfig(TokenizedPreferenceConfig):
+    # Keep the repo-wide tokenization / training argument surface, but add the one ε-DPO-specific
+    # hyperparameter needed by the original method.
     trainer_type: str = field(default="epsilon_dpo")
     epsilon: float = field(default=0.01)
 
@@ -99,6 +101,8 @@ class EpsilonDPOConfig(TokenizedPreferenceConfig):
         if self.epsilon < 0.0:
             raise ValueError("epsilon must be >= 0.")
 
+        # These three settings are hard requirements from the original ε-DPO implementation. We
+        # override them here so the trainer cannot silently drift away from the intended math.
         if self.reference_free:
             warnings.warn(
                 "When using `EpsilonDPOTrainer`, `reference_free=False` is required. Overriding to False.",

@@ -10,6 +10,12 @@ from trainer_configs import EpsilonDPOConfig
 
 
 class EpsilonDPOTrainer(TokenizedDPOTrainer):
+    """Repo-native ε-DPO trainer on top of the tokenized TRL 0.10.1-style batch path.
+
+    The key design choice here is to keep the existing tokenizer / dataset / collator contract
+    completely unchanged and only replace the loss-side mathematics with the original ε-DPO logic.
+    """
+
     _tag_names = ["trl", "epsilon-dpo"]
 
     def __init__(self, *args, **kwargs):
@@ -25,9 +31,18 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         if self.ref_model is None:
             raise ValueError("EpsilonDPOTrainer requires an explicit ref_model when precompute_ref_log_probs=False.")
 
+        # ε controls both:
+        # 1. the perturbed policy/reference logits used to estimate KL steps
+        # 2. the adaptive beta inside the per-example loss
         self.epsilon = float(self.args.epsilon)
+
+        # These optional branches mirror the upstream/reference behavior when the underlying
+        # model/config exposes them, but they are not required for the core ε-DPO math.
         self.aux_loss_enabled = bool(getattr(self.model.config, "output_router_logits", False))
         self.use_weighting = bool(getattr(self.args, "use_weighting", False))
+
+        # The original trainer updates self.beta only on optimizer-step boundaries. We therefore
+        # accumulate mean steps across microbatches here and flush the update only when gradients sync.
         self._pending_steps = torch.zeros((), device=self.accelerator.device)
 
     @staticmethod
@@ -37,6 +52,12 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         label_pad_token_id: int = -100,
         is_encoder_decoder: bool = False,
     ) -> Dict[str, torch.Tensor]:
+        """Score a full batch of sequences on exactly the loss-bearing tokens.
+
+        For decoder-only models, labels are shifted against logits in the standard causal-LM way:
+        token t is predicted from logits at position t - 1. For encoder-decoder models the logits
+        are already aligned to the labels, so no shift is applied.
+        """
         if logits.shape[:-1] != labels.shape:
             raise ValueError("Logits (batch and sequence length dim) and labels must have the same shape.")
 
@@ -44,10 +65,15 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
             scoring_logits = logits
             shifted_labels = labels.clone()
         else:
+            # Match the native DPOTrainer sequence scoring path: predict labels[:, 1:] from logits[:, :-1].
             scoring_logits = logits[:, :-1, :]
             shifted_labels = labels[:, 1:].clone()
 
+        # Only the completion tokens contribute to DPO; prompt tokens are masked with label_pad_token_id.
         loss_mask = shifted_labels != label_pad_token_id
+
+        # Replace masked labels with a safe in-range token id before gather(). These positions are
+        # later zeroed out by the mask, so the replacement value does not affect the final sum.
         safe_labels = shifted_labels.masked_fill(~loss_mask, 0)
         per_token_logps = TokenizedDPOTrainer._compute_token_logps(scoring_logits, safe_labels)
         sequence_logps = (per_token_logps * loss_mask).sum(-1)
@@ -66,6 +92,11 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         safe_labels: torch.LongTensor,
         loss_mask: torch.Tensor,
     ) -> torch.Tensor:
+        """Score logits that are already aligned to the exact masked labels we want to reuse.
+
+        This is used for ε-step estimation. We do not want to repeat any shift logic there; we want
+        to rescore the perturbed logits on the identical token positions used for the policy scores.
+        """
         per_token_logps = TokenizedDPOTrainer._compute_token_logps(aligned_logits, safe_labels)
         return (per_token_logps * loss_mask).sum(-1)
 
@@ -75,6 +106,12 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         p_epsilon_logratios: torch.Tensor,
         n_epsilon_logratios: torch.Tensor,
     ) -> torch.Tensor:
+        """Reproduce the original ε-DPO step rule.
+
+        A step is +1 if the positive perturbation increases the preference log-ratio while the
+        negative perturbation decreases it around the current ratio; -1 for the reverse pattern;
+        otherwise 0.
+        """
         p_epsilon_steps = (p_epsilon_logratios > logratios) & (logratios > n_epsilon_logratios)
         n_epsilon_steps = (n_epsilon_logratios > logratios) & (logratios > p_epsilon_logratios)
         return p_epsilon_steps.to(torch.long) - n_epsilon_steps.to(torch.long)
@@ -84,6 +121,8 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         scoring_logits: torch.Tensor,
         loss_mask: torch.Tensor,
     ) -> torch.Tensor:
+        # Logging raw logits over masked completion positions is more meaningful than averaging over
+        # prompt tokens or right-padding, which would dilute the training signal.
         if bool(loss_mask.any()):
             return scoring_logits[loss_mask].mean()
         return scoring_logits.mean()
@@ -93,6 +132,7 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         scoring_logits: torch.Tensor,
         safe_labels: torch.Tensor,
     ) -> torch.Tensor:
+        # RPO regularizes only the chosen branch. The safe labels already zero out masked positions.
         return F.cross_entropy(
             scoring_logits.reshape(-1, scoring_logits.shape[-1]),
             safe_labels.reshape(-1),
@@ -106,10 +146,18 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         logit_source: str,
         force_logits_to_float32: bool = False,
     ) -> Dict[str, torch.Tensor]:
+        """Single forward pass for either policy or reference on the native concatenated batch.
+
+        This method is the main adaptation layer from the original 0.13 ε-DPO implementation to the
+        repo's 0.10.1-style chosen/rejected full-sequence tensors. It returns both:
+        - sequence log-probs for chosen and rejected responses
+        - aligned logits / labels / masks needed later for ε-step computation
+        """
         model_device = self._get_model_device(model)
         if model_device is None or model_device.type == "cpu":
             model_device = self.accelerator.device
 
+        # Reuse the repo's standard DPO batching path so tokenization/collation semantics stay unchanged.
         concatenated_batch = self.concatenated_inputs(
             batch,
             is_encoder_decoder=self.is_encoder_decoder,
@@ -128,6 +176,7 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
             else {}
         )
         if self.aux_loss_enabled:
+            # Router logits are only requested when the underlying model supports an auxiliary loss.
             model_kwargs["output_router_logits"] = True
 
         outputs = model(
@@ -138,6 +187,7 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         )
         all_logits = outputs.logits
         if force_logits_to_float32:
+            # Optional fp32 scoring path for numerical stability when needed.
             all_logits = all_logits.float()
         all_logits = self._handle_non_finite_logits(all_logits, logit_source=logit_source)
 
@@ -155,6 +205,8 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         loss_mask = scored["loss_mask"]
         safe_labels = scored["safe_labels"]
 
+        # Keep the aligned tensors because ε-DPO step estimation must rescore perturbed logits on
+        # the exact same label positions as the unperturbed policy/reference scores.
         output = {
             "chosen_logps": chosen_logps,
             "rejected_logps": rejected_logps,
@@ -174,6 +226,7 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
             )
 
         if self.use_weighting:
+            # Preserve the original weighting branch when enabled by the config/environment.
             logprobs = F.log_softmax(scoring_logits, dim=-1)
             weights_adjustment_factor = torch.logsumexp(2 * logprobs, dim=-1)
             per_token_logps_adjusted = scored["per_token_logps"] - weights_adjustment_factor
@@ -193,6 +246,11 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         self,
         padded_batch: Dict[str, Union[torch.Tensor, Any]],
     ) -> Dict[str, torch.Tensor]:
+        """Run the frozen reference model and return the full output bundle.
+
+        Unlike standard DPO, ε-DPO cannot stop at cached reference sequence log-probs because the
+        step computation depends on the reference logits themselves.
+        """
         if self.ref_model is None:
             raise ValueError("EpsilonDPOTrainer requires a live ref_model for epsilon-step computation.")
 
@@ -209,6 +267,11 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         self,
         padded_batch: Dict[str, Union[torch.Tensor, Any]],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return only the reference chosen/rejected sequence log-probs.
+
+        The base trainer expects this method to exist, even though ε-DPO usually also needs the
+        aligned reference logits via compute_reference_model_output().
+        """
         reference_output = self.compute_reference_model_output(padded_batch)
         return reference_output["chosen_logps"], reference_output["rejected_logps"]
 
@@ -220,23 +283,29 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         ref_rejected_logps: torch.FloatTensor,
         steps: torch.LongTensor,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+        """Original ε-DPO loss with per-example beta adjusted by the estimated step."""
         logratios = chosen_logps - rejected_logps
         ref_logratios = ref_chosen_logps - ref_rejected_logps
         logits = logratios - ref_logratios
 
+        # This is the core ε-DPO change relative to vanilla DPO.
         updated_beta = self.beta / (1 + self.epsilon * steps.to(logits.dtype))
         losses = (
             -F.logsigmoid(updated_beta * logits) * (1 - self.label_smoothing)
             - F.logsigmoid(updated_beta * logits) * self.label_smoothing
         )
+        # Rewards must use the same updated beta as the loss for parity with the original trainer.
         chosen_rewards = updated_beta * (chosen_logps - ref_chosen_logps).detach()
         rejected_rewards = updated_beta * (rejected_logps - ref_rejected_logps).detach()
         return losses, chosen_rewards, rejected_rewards
 
     def _accumulate_microbatch_steps(self, steps: torch.Tensor) -> None:
+        # Match the original timing semantics: accumulate per-microbatch mean steps, normalized by
+        # gradient_accumulation_steps, and defer the actual beta mutation to the sync boundary.
         self._pending_steps.add_(steps.float().mean() / float(self.args.gradient_accumulation_steps))
 
     def _apply_pending_beta_update(self, metrics: Dict[str, torch.Tensor], prefix: str) -> None:
+        # Once gradients sync, aggregate the pending scalar across ranks and apply a single beta update.
         mean_steps = self.accelerator.gather(self._pending_steps.detach().reshape(1)).mean()
         metrics[f"{prefix}kl/beta"] = float(self.beta)
         metrics[f"{prefix}kl/avg_steps"] = mean_steps.detach().cpu()
@@ -252,12 +321,15 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         prefix = "eval_" if train_eval == "eval" else ""
         metrics = {}
 
+        # Score the policy and reference on the exact same native 0.10.1 batch.
         policy_output = self._epsilon_forward(model, batch, logit_source="policy")
         reference_output = self.compute_reference_model_output(batch)
 
+        # Vanilla DPO margin, still needed inside the ε-DPO loss.
         policy_logratios = policy_output["chosen_logps"] - policy_output["rejected_logps"]
-        reference_logratios = reference_output["chosen_logps"] - reference_output["rejected_logps"]
 
+        # Recreate the original perturbation-based step estimator from logits, not from cached
+        # sequence scores. The perturbations are evaluated on the same shifted labels and mask.
         p_epsilon_logits = self._handle_non_finite_logits(
             ((1 + self.epsilon) * policy_output["scoring_logits"]) - (self.epsilon * reference_output["scoring_logits"]),
             logit_source="policy_plus_epsilon",
@@ -297,6 +369,7 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
         if self.use_weighting and "policy_weights" in policy_output:
             losses = losses * policy_output["policy_weights"]
 
+        # Keep the reduction structure explicit so optional branches are applied per example first.
         loss = losses.mean()
         if self.aux_loss_enabled and "aux_loss" in policy_output:
             aux_loss_coef = float(getattr(model.config, "router_aux_loss_coef", 0.0))
@@ -305,6 +378,8 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
 
         reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
+        # Gather metrics across ranks so logs correspond to the effective global batch, matching the
+        # behavior of the reference implementation during distributed training.
         metrics[f"{prefix}rewards/chosen"] = self.accelerator.gather_for_metrics(chosen_rewards).mean().cpu()
         metrics[f"{prefix}rewards/rejected"] = self.accelerator.gather_for_metrics(rejected_rewards).mean().cpu()
         metrics[f"{prefix}rewards/accuracies"] = self.accelerator.gather_for_metrics(reward_accuracies).mean().cpu()
@@ -338,6 +413,7 @@ class EpsilonDPOTrainer(TokenizedDPOTrainer):
             ).mean().cpu()
 
         if train_eval == "train":
+            # Eval should be read-only; beta only evolves during training and only on sync boundaries.
             self._accumulate_microbatch_steps(steps.detach())
             if self.accelerator.gradient_state.sync_gradients:
                 self._apply_pending_beta_update(metrics, prefix=prefix)

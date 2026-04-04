@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    # Reuse the same runner shape as the other trainers so CLI, dataset preparation, and model
+    # loading stay uniform across algorithms.
     parser = H4ArgumentParser((ModelArguments, DataArguments, EpsilonDPOConfig))
     model_args, data_args, training_args = parser.parse()
 
@@ -29,6 +31,8 @@ def main():
     raw_datasets, tokenizer = prepare_preference_datasets(model_args, data_args, training_args, logger)
     eval_dataset = raw_datasets["test"] if training_args.do_eval and "test" in raw_datasets else None
 
+    # Pass both policy and frozen reference models explicitly: ε-DPO needs live reference logits for
+    # step estimation, so it cannot rely on reference-free mode or cached ref sequence scores alone.
     trainer = EpsilonDPOTrainer(
         model=model_args.model_name_or_path,
         ref_model=model_args.model_name_or_path,
