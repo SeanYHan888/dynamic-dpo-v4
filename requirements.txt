@@ -134,6 +134,10 @@ docstring-parser==0.17.0 \
     --hash=sha256:583de4a309722b3315439bb31d64ba3eebada841f2e2cee23b99df001434c912 \
     --hash=sha256:cf2569abd23dce8099b300f9b4fa8191e9582dda731fd533daf54c4551658708
     # via tyro
+einops==0.8.2 \
+    --hash=sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193 \
+    --hash=sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827
+    # via flash-attn
 filelock==3.25.2 \
     --hash=sha256:b64ece2b38f4ca29dd3e810287aa8c48182bbecd1ae6e9ae126c9b35f1382694 \
     --hash=sha256:ca8afb0da15f229774c9ad1b455ed96e85a81373065fb10446672f64444ddf70
@@ -143,6 +147,9 @@ filelock==3.25.2 \
     #   torch
     #   transformers
     #   triton
+flash-attn==2.5.8 ; sys_platform == 'linux' \
+    --hash=sha256:2e5b2bcff6d5cff40d494af91ecd1eb3c5b4520a6ce7a0a8b1f9c1ed129fb402
+    # via dynamic-dpo-v4
 frozenlist==1.8.0 \
     --hash=sha256:09474e9831bc2b2199fad6da3c14c7b0fbdd377cce9d3d77131be28906cb7d84 \
     --hash=sha256:0c18a16eab41e82c295618a77502e17b195883241c563b00f0aa5106fc4eaa0d \
