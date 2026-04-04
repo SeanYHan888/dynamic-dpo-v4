@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Optional
 
@@ -87,3 +88,36 @@ class MarginDPOConfig(TokenizedPreferenceConfig):
     require_explicit_ref_model: bool = field(default=True)
     f_divergence_type: str = field(default="reverse_kl")
     f_alpha_divergence_coef: float = field(default=1.0)
+
+
+@dataclass
+class EpsilonDPOConfig(TokenizedPreferenceConfig):
+    trainer_type: str = field(default="epsilon_dpo")
+    epsilon: float = field(default=0.01)
+
+    def __post_init__(self):
+        if self.epsilon < 0.0:
+            raise ValueError("epsilon must be >= 0.")
+
+        if self.reference_free:
+            warnings.warn(
+                "When using `EpsilonDPOTrainer`, `reference_free=False` is required. Overriding to False.",
+                UserWarning,
+            )
+            self.reference_free = False
+
+        if self.precompute_ref_log_probs:
+            warnings.warn(
+                "When using `EpsilonDPOTrainer`, `precompute_ref_log_probs=False` is required. Overriding to False.",
+                UserWarning,
+            )
+            self.precompute_ref_log_probs = False
+
+        if self.loss_type != "sigmoid":
+            warnings.warn(
+                "When using `EpsilonDPOTrainer`, `loss_type='sigmoid'` is required. Overriding to 'sigmoid'.",
+                UserWarning,
+            )
+            self.loss_type = "sigmoid"
+
+        super().__post_init__()

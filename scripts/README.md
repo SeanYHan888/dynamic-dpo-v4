@@ -7,6 +7,7 @@ This directory is intentionally flat and contains only training entrypoints, tra
 - `run_simpo.py`
 - `run_alpha_dpo.py`
 - `run_beta_dpo.py`
+- `run_epsilon_dpo.py`
 - `run_margin_dpo.py`
 - `run_sft.py`
 
@@ -22,6 +23,7 @@ Each runner owns CLI orchestration only:
 - `simpo_trainer.py`
 - `alpha_dpo_trainer.py`
 - `beta_dpo_trainer.py`
+- `epsilon_dpo_trainer.py`
 - `margin_dpo_trainer.py`
 - `tokenized_dpo_trainer.py`
 
