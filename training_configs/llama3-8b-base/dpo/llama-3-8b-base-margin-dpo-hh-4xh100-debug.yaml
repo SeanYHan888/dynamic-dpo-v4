@@ -5,7 +5,7 @@ attn_implementation: flash_attention_2
 
 # Data training arguments
 dataset_mixer:
-  Anthropic/hh-rlhf: 1.0
+  Anthropic/hh-rlhf: 0.1
 dataset_configs:
   - harmless-base
 dataset_splits:
@@ -47,6 +47,7 @@ optim: adamw_torch
 
 tokenization_mode: online
 tokenization_batch_size: 64
+post_tokenization_log_samples: 10
 reuse_tokenized_dataset: true
 tokenized_dataset_cache_dir: .cache/tokenized_preferences
 
@@ -64,4 +65,4 @@ report_to:
   - wandb
 seed: 42
 push_to_hub: false
-hub_model_id: 61/llama-3-8b-base-margin-dpo-hh-4xh100
+hub_model_id: jackf857/llama-3-8b-base-margin-dpo-hh-4xh100
