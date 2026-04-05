@@ -10,6 +10,8 @@ class TokenizedPreferenceConfig(DPOConfig):
     dataset_num_proc: Optional[int] = field(default=None)
     tokenization_mode: Literal["online", "offline_only", "reuse_only"] = field(default="online")
     tokenization_batch_size: int = field(default=64)
+    post_tokenization_log_samples: int = field(default=0)
+    post_tokenization_log_dir: Optional[str] = field(default=None)
     precompute_ref_batch_size: Optional[int] = field(default=None)
     precompute_ref_eval_batch_size: Optional[int] = field(default=None)
     reuse_tokenized_dataset: bool = field(default=False)
@@ -34,6 +36,8 @@ class TokenizedPreferenceConfig(DPOConfig):
             raise ValueError("tokenization_mode must be one of {'online', 'offline_only', 'reuse_only'}.")
         if self.tokenization_batch_size <= 0:
             raise ValueError("tokenization_batch_size must be > 0.")
+        if self.post_tokenization_log_samples < 0:
+            raise ValueError("post_tokenization_log_samples must be >= 0.")
         if self.precompute_ref_batch_size is not None and self.precompute_ref_batch_size <= 0:
             raise ValueError("precompute_ref_batch_size must be > 0 when provided.")
         if self.precompute_ref_eval_batch_size is not None and self.precompute_ref_eval_batch_size <= 0:

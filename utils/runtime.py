@@ -22,6 +22,12 @@ from utils.checkpoint_io import (
     save_hf_compatible_training_artifacts,
 )
 from utils.dtypes import normalize_torch_dtype
+from utils.inspection_logging import (
+    is_main_process as is_logging_main_process,
+    resolve_inspection_log_dir,
+    select_sample_indices,
+    write_jsonl_records,
+)
 from utils.preprocessing_cache import (
     attach_prompt_preprocessing_metadata,
     build_prompt_preprocessing_metadata,
@@ -198,19 +204,6 @@ def _is_main_process(training_args) -> bool:
     return getattr(training_args, "process_index", 0) == 0
 
 
-def _resolve_preprocessing_log_dir(data_args, training_args) -> Path:
-    if data_args.preprocessing_log_dir:
-        return Path(data_args.preprocessing_log_dir).expanduser()
-    return Path(training_args.output_dir) / "preprocessing_logs"
-
-
-def _select_preprocessing_sample_indices(dataset_size: int, sample_count: int, seed: int) -> list[int]:
-    if dataset_size <= 0 or sample_count <= 0:
-        return []
-    effective_count = min(dataset_size, sample_count)
-    return random.Random(seed).sample(range(dataset_size), k=effective_count)
-
-
 def _build_processed_sample_record(dataset, index: int, split_name: str) -> dict:
     sample = dataset[index]
     return {
@@ -223,11 +216,15 @@ def _build_processed_sample_record(dataset, index: int, split_name: str) -> dict
 
 
 def _log_processed_train_samples(raw_datasets, data_args, training_args, run_logger) -> None:
-    if "train" not in raw_datasets or len(raw_datasets["train"]) == 0 or not _is_main_process(training_args):
+    if (
+        "train" not in raw_datasets
+        or len(raw_datasets["train"]) == 0
+        or not is_logging_main_process(getattr(training_args, "process_index", 0))
+    ):
         return
 
     train_dataset = raw_datasets["train"]
-    sample_indices = _select_preprocessing_sample_indices(
+    sample_indices = select_sample_indices(
         dataset_size=len(train_dataset),
         sample_count=max(1, data_args.preprocessing_log_samples),
         seed=training_args.seed,
@@ -241,16 +238,12 @@ def _log_processed_train_samples(raw_datasets, data_args, training_args, run_log
     if data_args.preprocessing_log_samples <= 0:
         return
 
-    log_dir = _resolve_preprocessing_log_dir(data_args, training_args)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "train_samples.jsonl"
     records = [
         _build_processed_sample_record(train_dataset, index, split_name="train")
         for index in sample_indices[: data_args.preprocessing_log_samples]
     ]
-    with log_path.open("w", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    log_dir = resolve_inspection_log_dir(data_args.preprocessing_log_dir, training_args.output_dir)
+    log_path = write_jsonl_records(log_dir, "train_samples.jsonl", records)
     run_logger.info(f"Saved {len(records)} processed train samples to {log_path}")
 
 

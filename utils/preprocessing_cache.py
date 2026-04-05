@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 from datasets import Dataset, DatasetDict, config as datasets_config, load_from_disk
+from utils.inspection_logging import (
+    is_main_process,
+    resolve_inspection_log_dir,
+    select_sample_indices,
+    write_jsonl_records,
+)
 
 DEFAULT_HF_CACHE_SUBDIR = Path(".cache") / "hf_datasets"
 DEFAULT_TOKENIZED_CACHE_SUBDIR = Path(".cache") / "tokenized_preferences"
@@ -38,6 +44,136 @@ def _resolve_repo_cache_dir(explicit_path: Optional[str], default_subdir: Path) 
             path = (_repo_root() / path).resolve()
         return path
     return (_repo_root() / default_subdir).resolve()
+
+
+def _coerce_token_sequence(value: Any) -> Optional[list[int]]:
+    if value is None:
+        return None
+    return [int(token) for token in value]
+
+
+def _decode_tokens(tokenizer, token_ids: Optional[list[int]]) -> Optional[str]:
+    if token_ids is None:
+        return None
+
+    decode = getattr(tokenizer, "decode", None)
+    if callable(decode):
+        try:
+            return decode(token_ids, skip_special_tokens=False)
+        except TypeError:
+            return decode(token_ids)
+    return None
+
+
+def _build_post_tokenization_sample_record(
+    dataset: Dataset,
+    index: int,
+    split_name: str,
+    tokenization_source: str,
+    tokenizer,
+    label_pad_token_id: int,
+) -> dict[str, Any]:
+    sample = dataset[index]
+    prompt_input_ids = _coerce_token_sequence(sample.get("prompt_input_ids"))
+    prompt_attention_mask = _coerce_token_sequence(sample.get("prompt_attention_mask"))
+    chosen_input_ids = _coerce_token_sequence(sample.get("chosen_input_ids"))
+    chosen_attention_mask = _coerce_token_sequence(sample.get("chosen_attention_mask"))
+    chosen_labels = _coerce_token_sequence(sample.get("chosen_labels"))
+    rejected_input_ids = _coerce_token_sequence(sample.get("rejected_input_ids"))
+    rejected_attention_mask = _coerce_token_sequence(sample.get("rejected_attention_mask"))
+    rejected_labels = _coerce_token_sequence(sample.get("rejected_labels"))
+    chosen_target_ids = None if chosen_labels is None else [
+        token for token in chosen_labels if token != label_pad_token_id
+    ]
+    rejected_target_ids = None if rejected_labels is None else [
+        token for token in rejected_labels if token != label_pad_token_id
+    ]
+
+    return {
+        "sample_index": index,
+        "split": split_name,
+        "tokenization_source": tokenization_source,
+        "prompt": sample.get("prompt"),
+        "chosen": sample.get("chosen"),
+        "rejected": sample.get("rejected"),
+        "prompt_input_ids": prompt_input_ids,
+        "prompt_attention_mask": prompt_attention_mask,
+        "chosen_input_ids": chosen_input_ids,
+        "chosen_attention_mask": chosen_attention_mask,
+        "chosen_labels": chosen_labels,
+        "rejected_input_ids": rejected_input_ids,
+        "rejected_attention_mask": rejected_attention_mask,
+        "rejected_labels": rejected_labels,
+        "decoded_prompt": _decode_tokens(tokenizer, prompt_input_ids),
+        "decoded_chosen_full": _decode_tokens(tokenizer, chosen_input_ids),
+        "decoded_rejected_full": _decode_tokens(tokenizer, rejected_input_ids),
+        "decoded_chosen_target": _decode_tokens(tokenizer, chosen_target_ids),
+        "decoded_rejected_target": _decode_tokens(tokenizer, rejected_target_ids),
+        "prompt_length": None if prompt_input_ids is None else len(prompt_input_ids),
+        "chosen_length": None if chosen_input_ids is None else len(chosen_input_ids),
+        "rejected_length": None if rejected_input_ids is None else len(rejected_input_ids),
+        "chosen_target_length": None if chosen_target_ids is None else len(chosen_target_ids),
+        "rejected_target_length": None if rejected_target_ids is None else len(rejected_target_ids),
+    }
+
+
+def _log_post_tokenization_samples(
+    dataset: Dataset,
+    args,
+    split_name: str,
+    tokenization_source: str,
+    tokenizer,
+    label_pad_token_id: int,
+    logger: logging.Logger = LOGGER,
+) -> None:
+    if split_name != "train" or len(dataset) == 0 or not is_main_process(getattr(args, "process_index", 0)):
+        return
+
+    sample_count = getattr(args, "post_tokenization_log_samples", 0)
+    sample_indices = select_sample_indices(
+        dataset_size=len(dataset),
+        sample_count=max(1, sample_count),
+        seed=getattr(args, "seed", 0),
+    )
+    terminal_record = _build_post_tokenization_sample_record(
+        dataset,
+        sample_indices[0],
+        split_name=split_name,
+        tokenization_source=tokenization_source,
+        tokenizer=tokenizer,
+        label_pad_token_id=label_pad_token_id,
+    )
+    logger.info(
+        "Post-tokenization train sample %(sample_index)s (%(tokenization_source)s):\n\n"
+        "Prompt ids:\n%(prompt_input_ids)s\n\n"
+        "Chosen ids:\n%(chosen_input_ids)s\n\n"
+        "Rejected ids:\n%(rejected_input_ids)s\n\n"
+        "Decoded prompt:\n%(decoded_prompt)s\n\n"
+        "Decoded chosen target:\n%(decoded_chosen_target)s\n\n"
+        "Decoded rejected target:\n%(decoded_rejected_target)s",
+        terminal_record,
+    )
+
+    if sample_count <= 0:
+        return
+
+    records = [
+        _build_post_tokenization_sample_record(
+            dataset,
+            index,
+            split_name=split_name,
+            tokenization_source=tokenization_source,
+            tokenizer=tokenizer,
+            label_pad_token_id=label_pad_token_id,
+        )
+        for index in sample_indices[:sample_count]
+    ]
+    log_dir = resolve_inspection_log_dir(
+        getattr(args, "post_tokenization_log_dir", None),
+        getattr(args, "output_dir", None),
+    )
+    log_path = write_jsonl_records(log_dir, "post_tokenization_train_samples.jsonl", records)
+    logger.info(f"Saved {len(records)} post-tokenization train samples to {log_path}")
 
 
 def _callable_source_hash(fn: Any) -> str:
@@ -156,6 +292,14 @@ def _maybe_prepare_single_tokenized_split(
             cached_dataset = load_from_disk(str(dataset_dir))
             if _has_required_columns(cached_dataset, trainer.is_encoder_decoder):
                 LOGGER.info(f"tokenized cache hit for {split_name} at {split_dir}")
+                _log_post_tokenization_samples(
+                    cached_dataset,
+                    args=args,
+                    split_name=split_name,
+                    tokenization_source="cache_hit",
+                    tokenizer=trainer.tokenizer,
+                    label_pad_token_id=trainer.label_pad_token_id,
+                )
                 return cached_dataset
             LOGGER.warning(f"rebuild after invalid cache for {split_name}: missing required tokenized columns at {split_dir}")
         else:
@@ -238,6 +382,14 @@ def _tokenize_dataset(trainer, args, dataset: Dataset, split_name: str) -> Datas
     )
     elapsed = time.perf_counter() - start_time
     LOGGER.info(f"tokenized split {split_name} in {elapsed:.2f}s")
+    _log_post_tokenization_samples(
+        tokenized_dataset,
+        args=args,
+        split_name=split_name,
+        tokenization_source="fresh",
+        tokenizer=trainer.tokenizer,
+        label_pad_token_id=trainer.label_pad_token_id,
+    )
     return tokenized_dataset
 
 
