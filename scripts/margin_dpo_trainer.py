@@ -14,6 +14,7 @@ def log_margin(
     log_dir: str,
     epoch: float,
     step: int,
+    batch_size: int,
     save_full: bool = False,
 ) -> None:
     os.makedirs(log_dir, exist_ok=True)
@@ -24,6 +25,7 @@ def log_margin(
     record = {
         "epoch": float(epoch),
         "step": int(step),
+        "batch_size": int(batch_size),
         "mean": float(margin_np.mean()),
         "std": float(margin_np.std(ddof=0)),
         "min": float(margin_np.min()),
@@ -60,6 +62,7 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
         self.require_explicit_ref_model = bool(self.args.require_explicit_ref_model)
         self.f_divergence_type = self.args.f_divergence_type
         self.f_alpha_divergence_coef = float(self.args.f_alpha_divergence_coef)
+        self._pending_margin_tensors: list[torch.Tensor] = []
         os.makedirs(self.margin_log_path, exist_ok=True)
 
     def _get_reference_logps(
@@ -135,15 +138,27 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
 
     def _maybe_log_margin(self, margin_tensor: torch.Tensor) -> None:
         if not self.model.training:
+            self._pending_margin_tensors.clear()
             return
+
+        # Trainer calls get_batch_loss_metrics once per microbatch. Buffer local margins
+        # until the synchronized optimizer step so each record reflects the effective batch.
+        self._pending_margin_tensors.append(margin_tensor.detach())
+
         if not self.accelerator.sync_gradients:
             return
 
-        step = int(self.state.global_step)
+        if not self._pending_margin_tensors:
+            return
+
+        local_margin = torch.cat(self._pending_margin_tensors, dim=0)
+        self._pending_margin_tensors.clear()
+
+        step = int(self.state.global_step) + 1
         if self.margin_log_steps <= 0 or step % self.margin_log_steps != 0:
             return
 
-        margin_all = self.accelerator.gather_for_metrics(margin_tensor.detach())
+        margin_all = self.accelerator.gather_for_metrics(local_margin)
         if not self.is_world_process_zero():
             return
 
@@ -153,6 +168,7 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
             log_dir=self.margin_log_path,
             epoch=float(epoch),
             step=step,
+            batch_size=int(margin_all.numel()),
             save_full=self.margin_save_full,
         )
 
