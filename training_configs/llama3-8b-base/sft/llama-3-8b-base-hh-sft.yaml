@@ -40,8 +40,8 @@ logging_steps: 5
 logging_strategy: steps
 
 # Output and checkpointing
-output_dir: outputs/llama-3-8b-base-hh-harmless-sft-4xh100
-run_name: llama-3-8b-base-hh-harmless-sft-4xh100
+output_dir: outputs/llama-3-8b-base-hh-harmless-margin-dpo-4xh100
+run_name: llama-3-8b-base-hh-harmless-margin-dpo-4xh100
 overwrite_output_dir: true
 save_strategy: "no"
 save_steps: 1000000

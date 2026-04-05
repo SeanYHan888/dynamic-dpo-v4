@@ -5,7 +5,6 @@ from typing import Dict, Literal, Tuple, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
-
 from tokenized_dpo_trainer import TokenizedDPOTrainer
 from trainer_configs import MarginDPOConfig
 
@@ -25,7 +24,6 @@ def log_margin(
     record = {
         "epoch": float(epoch),
         "step": int(step),
-        "batch_size": int(margin_np.shape[0]),
         "mean": float(margin_np.mean()),
         "std": float(margin_np.std(ddof=0)),
         "min": float(margin_np.min()),
@@ -34,6 +32,7 @@ def log_margin(
         "p90": float(p90),
         "max": float(margin_np.max()),
         "pos_frac": float((margin_np > 0).mean()),
+        "sample": [float(x) for x in margin_np[:]],
     }
 
     if save_full:
@@ -72,14 +71,23 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
                 raise KeyError(
                     "precompute_ref_logps=True requires both 'ref_chosen_logps' and 'ref_rejected_logps' in the batch."
                 )
-            if not torch.isfinite(batch["ref_chosen_logps"]).all() or not torch.isfinite(batch["ref_rejected_logps"]).all():
-                raise ValueError("Encountered non-finite precomputed reference log-probs in the training batch.")
+            if (
+                not torch.isfinite(batch["ref_chosen_logps"]).all()
+                or not torch.isfinite(batch["ref_rejected_logps"]).all()
+            ):
+                raise ValueError(
+                    "Encountered non-finite precomputed reference log-probs in the training batch."
+                )
             return batch["ref_chosen_logps"], batch["ref_rejected_logps"]
 
         if self.ref_model is None and self.require_explicit_ref_model:
-            raise ValueError("This trainer is configured to require an explicit ref_model, but self.ref_model is None.")
+            raise ValueError(
+                "This trainer is configured to require an explicit ref_model, but self.ref_model is None."
+            )
         if self.ref_model is None:
-            raise ValueError("ref_model is None. Pass an explicit frozen reference model or enable precomputed reference log-probs.")
+            raise ValueError(
+                "ref_model is None. Pass an explicit frozen reference model or enable precomputed reference log-probs."
+            )
 
         with torch.no_grad():
             ref_chosen_logps, ref_rejected_logps, _, _, _ = self.concatenated_forward(
@@ -90,7 +98,9 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
             )
         return ref_chosen_logps, ref_rejected_logps
 
-    def _stable_alpha_scores(self, logratios: torch.Tensor, alpha: float, coef: float) -> torch.Tensor:
+    def _stable_alpha_scores(
+        self, logratios: torch.Tensor, alpha: float, coef: float
+    ) -> torch.Tensor:
         t = (alpha - 1.0) * logratios
         clamp_max_map = {
             torch.float16: 11.0,
@@ -155,33 +165,47 @@ class MarginDPOTrainer(TokenizedDPOTrainer):
         prefix = "eval_" if train_eval == "eval" else ""
         metrics = {}
 
-        chosen_logps, rejected_logps, chosen_logits, rejected_logits, _ = self.concatenated_forward(
-            model,
-            batch,
-            average_log_prob=False,
-            logit_source="policy",
+        chosen_logps, rejected_logps, chosen_logits, rejected_logits, _ = (
+            self.concatenated_forward(
+                model,
+                batch,
+                average_log_prob=False,
+                logit_source="policy",
+            )
         )
         ref_chosen_logps, ref_rejected_logps = self._get_reference_logps(batch)
         ref_chosen_logps = ref_chosen_logps.to(chosen_logps.device)
         ref_rejected_logps = ref_rejected_logps.to(chosen_logps.device)
 
-        margin = (chosen_logps - rejected_logps) - (ref_chosen_logps - ref_rejected_logps)
+        margin = (chosen_logps - rejected_logps) - (
+            ref_chosen_logps - ref_rejected_logps
+        )
         self._maybe_log_margin(margin.detach())
 
         chosen_logratios = chosen_logps - ref_chosen_logps
         rejected_logratios = rejected_logps - ref_rejected_logps
-        chosen_scores, rejected_scores = self._project_scores(chosen_logratios, rejected_logratios)
+        chosen_scores, rejected_scores = self._project_scores(
+            chosen_logratios, rejected_logratios
+        )
 
         delta_score = chosen_scores - rejected_scores
         per_seq_loss = -F.logsigmoid(float(self.beta) * delta_score)
         loss = per_seq_loss.mean()
 
         metrics[f"{prefix}margin_dpo/margin_mean"] = margin.detach().mean().cpu()
-        metrics[f"{prefix}margin_dpo/margin_std"] = margin.detach().std(unbiased=False).cpu()
+        metrics[f"{prefix}margin_dpo/margin_std"] = (
+            margin.detach().std(unbiased=False).cpu()
+        )
         metrics[f"{prefix}logps/chosen"] = chosen_logps.detach().mean().cpu()
         metrics[f"{prefix}logps/rejected"] = rejected_logps.detach().mean().cpu()
         metrics[f"{prefix}logps/ref_chosen"] = ref_chosen_logps.detach().mean().cpu()
-        metrics[f"{prefix}logps/ref_rejected"] = ref_rejected_logps.detach().mean().cpu()
-        metrics["eval_logits/chosen" if prefix else "logits/chosen"] = chosen_logits.detach().mean().cpu()
-        metrics["eval_logits/rejected" if prefix else "logits/rejected"] = rejected_logits.detach().mean().cpu()
+        metrics[f"{prefix}logps/ref_rejected"] = (
+            ref_rejected_logps.detach().mean().cpu()
+        )
+        metrics["eval_logits/chosen" if prefix else "logits/chosen"] = (
+            chosen_logits.detach().mean().cpu()
+        )
+        metrics["eval_logits/rejected" if prefix else "logits/rejected"] = (
+            rejected_logits.detach().mean().cpu()
+        )
         return loss, metrics
