@@ -204,6 +204,18 @@ def maybe_normalize_preference_dataset(
     )
 
 
+def _columns_to_keep_for_dataset(dataset: Dataset, columns_to_keep: List[str]) -> List[str]:
+    requested_columns = set(columns_to_keep)
+    canonical_preference_columns = {"prompt", "chosen", "rejected"}
+
+    if canonical_preference_columns.intersection(requested_columns) and canonical_preference_columns.issubset(
+        set(dataset.column_names)
+    ):
+        requested_columns.update(canonical_preference_columns)
+
+    return [column for column in dataset.column_names if column in requested_columns]
+
+
 def maybe_convert_sft_example_to_openai_format(example: Dict[str, Any]) -> Dict[str, Any]:
     if is_openai_format(example.get("messages")):
         return example
@@ -440,8 +452,11 @@ def mix_datasets(
                 run_logger=run_logger,
             )
 
-            # Remove redundant columns to avoid schema conflicts on load
-            dataset = dataset.remove_columns([col for col in dataset.column_names if col not in columns_to_keep])
+            # Remove redundant columns to avoid schema conflicts on load.
+            columns_to_keep_for_dataset = _columns_to_keep_for_dataset(dataset, columns_to_keep)
+            dataset = dataset.remove_columns(
+                [col for col in dataset.column_names if col not in columns_to_keep_for_dataset]
+            )
             if "train" in split:
                 raw_train_datasets.append(dataset)
             elif "test" in split:
