@@ -1,5 +1,5 @@
 # Model arguments
-model_name_or_path: princeton-nlp/Llama-3-Base-8B-SFT
+model_name_or_path: W-61/llama-3-8b-base-hh-harmless-sft-4xh100
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 
