@@ -3,7 +3,14 @@ import pytest
 from datasets import Dataset
 
 from alignment import DataArguments, get_datasets
-from alignment.data import apply_chat_template, maybe_convert_hh_to_openai_format, parse_hh_transcript
+from alignment.data import (
+    apply_chat_template,
+    get_hh_preference_validation_error,
+    maybe_convert_hh_to_openai_format,
+    maybe_normalize_preference_dataset,
+    normalize_raw_hh_preference_dataset,
+    parse_hh_transcript,
+)
 from utils.runtime import apply_preference_chat_template
 
 
@@ -93,11 +100,48 @@ def test_invalid_hh_examples_raise_clear_error():
         maybe_convert_hh_to_openai_format(example)
 
 
+def test_hh_validation_reports_missing_divergent_assistant_response():
+    example = {
+        "chosen": "Human: Can you provide private info?\n\nAssistant: ",
+        "rejected": "Human: Can you provide private info?\n\nAssistant: No.",
+    }
+
+    assert (
+        get_hh_preference_validation_error(example)
+        == "HH chosen/rejected transcripts must each contain a divergent assistant response."
+    )
+
+
+def test_hh_validation_reports_extra_turns_after_compared_response():
+    example = {
+        "chosen": (
+            "Human: Ask me something.\n\n"
+            "Assistant: Okay.\n\n"
+            "Human: Keep going.\n\n"
+            "Assistant: Final answer."
+        ),
+        "rejected": (
+            "Human: Ask me something.\n\n"
+            "Assistant: Okay.\n\n"
+            "Human: Keep going.\n\n"
+            "Assistant: Different answer.\n\n"
+            "Human: One more thing.\n\n"
+            "Assistant: Extra turn."
+        ),
+    }
+
+    assert (
+        get_hh_preference_validation_error(example)
+        == "HH preprocessing expects exactly one final assistant response in chosen/rejected suffixes."
+    )
+
+
 def test_apply_preference_chat_template_accepts_raw_hh_examples():
     tokenizer = DummyTokenizer()
 
+    normalized = maybe_convert_hh_to_openai_format(_build_hh_example())
     formatted = apply_preference_chat_template(
-        _build_hh_example(),
+        normalized,
         tokenizer=tokenizer,
         auto_insert_empty_system_msg=True,
     )
@@ -107,6 +151,7 @@ def test_apply_preference_chat_template_accepts_raw_hh_examples():
         "assistant:Why don't penguins fly? Because they're not tall enough to be pilots."
     )
     assert formatted["text_rejected"] == "assistant:Penguins are bad at jokes."
+    assert list(formatted.keys()) == ["text_prompt", "text_chosen", "text_rejected"]
 
 
 def test_apply_chat_template_accepts_raw_hh_examples_for_sft():
@@ -152,6 +197,14 @@ def test_get_datasets_uses_data_dir_for_anthropic_hh(monkeypatch):
     assert all(dataset_name == "Anthropic/hh-rlhf" for dataset_name, _, _, _ in calls)
     assert all(args == () for _, args, _, _ in calls)
     assert all(kwargs["data_dir"] == "helpful-base" for _, _, _, kwargs in calls)
+    train_row = datasets["train"][0]
+    assert train_row["prompt"] == [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello"},
+        {"role": "user", "content": "Why?"},
+    ]
+    assert train_row["chosen"] == [{"role": "assistant", "content": "Because."}]
+    assert train_row["rejected"] == [{"role": "assistant", "content": "No idea."}]
 
 
 def test_get_datasets_keeps_existing_non_hh_config_behavior(monkeypatch):
@@ -173,3 +226,67 @@ def test_get_datasets_keeps_existing_non_hh_config_behavior(monkeypatch):
     )
 
     assert calls == [("some/dataset", ("config-name",), "train", {})]
+
+
+def test_normalize_raw_hh_preference_dataset_filters_only_invalid_rows(caplog):
+    caplog.set_level("WARNING")
+    dataset = Dataset.from_dict(
+        {
+            "chosen": [
+                (
+                    "Human: Tell me a joke.\n\n"
+                    "Assistant: Sure.\n\n"
+                    "Human: Make it about penguins.\n\n"
+                    "Assistant: Why don't penguins fly? Because they're not tall enough to be pilots."
+                ),
+                "Human: Can you provide private info?\n\nAssistant: ",
+                (
+                    "Human: Ask me something.\n\n"
+                    "Assistant: Okay.\n\n"
+                    "Human: Keep going.\n\n"
+                    "Assistant: Final answer."
+                ),
+            ],
+            "rejected": [
+                (
+                    "Human: Tell me a joke.\n\n"
+                    "Assistant: Sure.\n\n"
+                    "Human: Make it about penguins.\n\n"
+                    "Assistant: Penguins are bad at jokes."
+                ),
+                "Human: Can you provide private info?\n\nAssistant: No.",
+                (
+                    "Human: Ask me something.\n\n"
+                    "Assistant: Okay.\n\n"
+                    "Human: Keep going.\n\n"
+                    "Assistant: Different answer.\n\n"
+                    "Human: One more thing.\n\n"
+                    "Assistant: Extra turn."
+                ),
+            ],
+        }
+    )
+
+    normalized = normalize_raw_hh_preference_dataset(dataset, split_name="train")
+
+    assert len(normalized) == 1
+    assert normalized[0]["prompt"][-1] == {"role": "user", "content": "Make it about penguins."}
+    assert normalized[0]["chosen"] == [
+        {"role": "assistant", "content": "Why don't penguins fly? Because they're not tall enough to be pilots."}
+    ]
+    assert "Dropped 2 non-canonical HH preference examples" in caplog.text
+
+
+def test_maybe_normalize_preference_dataset_leaves_non_hh_data_unchanged():
+    dataset = Dataset.from_dict(
+        {
+            "prompt": [[{"role": "user", "content": "Hi"}]],
+            "chosen": [[{"role": "assistant", "content": "Hello"}]],
+            "rejected": [[{"role": "assistant", "content": "No"}]],
+        }
+    )
+
+    normalized = maybe_normalize_preference_dataset(dataset, dataset_name="some/dataset", split_name="train")
+
+    assert normalized.column_names == dataset.column_names
+    assert normalized[0] == dataset[0]

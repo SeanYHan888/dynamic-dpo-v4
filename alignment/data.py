@@ -13,15 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import re
+from collections import Counter
 from typing import Any, Dict, List, Literal, Optional
 
-from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk
+from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset, load_from_disk
 from datasets.builder import DatasetGenerationError
 
 from .configs import DataArguments
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_CHAT_TEMPLATE = "{% for message in messages %}\n{% if message['role'] == 'user' %}\n{{ '<|user|>\n' + message['content'] + eos_token }}\n{% elif message['role'] == 'system' %}\n{{ '<|system|>\n' + message['content'] + eos_token }}\n{% elif message['role'] == 'assistant' %}\n{{ '<|assistant|>\n'  + message['content'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
 HH_TURN_PATTERN = re.compile(r"(?:^|\n\n)(Human|Assistant): ")
@@ -76,13 +79,10 @@ def is_raw_hh_preference_example(example: Dict[str, Any]) -> bool:
     return all(marker in chosen for marker in turn_markers) and all(marker in rejected for marker in turn_markers)
 
 
-def maybe_convert_hh_to_openai_format(example: Dict[str, Any]) -> Dict[str, Any]:
-    if not is_raw_hh_preference_example(example):
-        return example
-
-    chosen_messages = parse_hh_transcript(example["chosen"])
-    rejected_messages = parse_hh_transcript(example["rejected"])
-
+def _split_hh_prompt_and_responses(
+    chosen_messages: List[Dict[str, str]],
+    rejected_messages: List[Dict[str, str]],
+) -> tuple[List[Dict[str, str]], List[Dict[str, str]], List[Dict[str, str]]]:
     prefix_len = 0
     for chosen_message, rejected_message in zip(chosen_messages, rejected_messages):
         if chosen_message != rejected_message:
@@ -105,10 +105,103 @@ def maybe_convert_hh_to_openai_format(example: Dict[str, Any]) -> Dict[str, Any]
     if chosen_suffix[0]["role"] != "assistant" or rejected_suffix[0]["role"] != "assistant":
         raise ValueError("HH chosen/rejected suffixes must each contain one assistant message.")
 
-    example["prompt"] = prompt_messages
-    example["chosen"] = chosen_suffix
-    example["rejected"] = rejected_suffix
-    return example
+    return prompt_messages, chosen_suffix, rejected_suffix
+
+
+def get_hh_preference_validation_error(example: Dict[str, Any]) -> Optional[str]:
+    if not is_raw_hh_preference_example(example):
+        return None
+
+    try:
+        chosen_messages = parse_hh_transcript(example["chosen"])
+        rejected_messages = parse_hh_transcript(example["rejected"])
+        _split_hh_prompt_and_responses(chosen_messages, rejected_messages)
+    except ValueError as error:
+        return str(error)
+
+    return None
+
+
+def maybe_convert_hh_to_openai_format(example: Dict[str, Any]) -> Dict[str, Any]:
+    if not is_raw_hh_preference_example(example):
+        return example
+
+    chosen_messages = parse_hh_transcript(example["chosen"])
+    rejected_messages = parse_hh_transcript(example["rejected"])
+    prompt_messages, chosen_suffix, rejected_suffix = _split_hh_prompt_and_responses(
+        chosen_messages,
+        rejected_messages,
+    )
+
+    converted = dict(example)
+    converted["prompt"] = prompt_messages
+    converted["chosen"] = chosen_suffix
+    converted["rejected"] = rejected_suffix
+    return converted
+
+
+def normalize_raw_hh_preference_dataset(
+    dataset: Dataset,
+    *,
+    split_name: str,
+    is_main_process: bool = True,
+    run_logger=None,
+) -> Dataset:
+    active_logger = run_logger or logger
+    invalid_indices = []
+    invalid_reasons = Counter()
+
+    for index, example in enumerate(dataset):
+        error = get_hh_preference_validation_error(example)
+        if error is None:
+            continue
+        invalid_indices.append(index)
+        invalid_reasons[error] += 1
+
+    if invalid_indices:
+        invalid_index_set = set(invalid_indices)
+        keep_indices = [index for index in range(len(dataset)) if index not in invalid_index_set]
+        dataset = dataset.select(keep_indices)
+
+        if is_main_process:
+            reason_summary = ", ".join(
+                f"{count} x {reason}" for reason, count in invalid_reasons.most_common()
+            )
+            active_logger.warning(
+                "Dropped %s non-canonical HH preference examples from split `%s` before normalization (%s).",
+                len(invalid_indices),
+                split_name,
+                reason_summary,
+            )
+
+    if len(dataset) == 0:
+        return Dataset.from_dict({"prompt": [], "chosen": [], "rejected": []})
+
+    return dataset.map(
+        lambda example: maybe_convert_hh_to_openai_format(dict(example)),
+        remove_columns=list(dataset.column_names),
+        desc=f"Normalizing raw HH preferences ({split_name})",
+        load_from_cache_file=False,
+    )
+
+
+def maybe_normalize_preference_dataset(
+    dataset: Dataset,
+    *,
+    dataset_name: str,
+    split_name: str,
+    is_main_process: bool = True,
+    run_logger=None,
+) -> Dataset:
+    if dataset_name != "Anthropic/hh-rlhf":
+        return dataset
+
+    return normalize_raw_hh_preference_dataset(
+        dataset,
+        split_name=split_name,
+        is_main_process=is_main_process,
+        run_logger=run_logger,
+    )
 
 
 def maybe_convert_sft_example_to_openai_format(example: Dict[str, Any]) -> Dict[str, Any]:
@@ -237,6 +330,8 @@ def get_datasets(
     configs: Optional[List[str]] = None,
     columns_to_keep: Optional[List[str]] = None,
     shuffle: bool = True,
+    is_main_process: bool = True,
+    run_logger=None,
 ) -> DatasetDict:
     """
     Loads one or more datasets with varying training set proportions.
@@ -281,6 +376,8 @@ def get_datasets(
         configs=configs,
         columns_to_keep=columns_to_keep,
         shuffle=shuffle,
+        is_main_process=is_main_process,
+        run_logger=run_logger,
     )
     return raw_datasets
 
@@ -291,6 +388,8 @@ def mix_datasets(
     configs: Optional[List[str]] = None,
     columns_to_keep: Optional[List[str]] = None,
     shuffle=True,
+    is_main_process: bool = True,
+    run_logger=None,
 ) -> DatasetDict:
     """
     Loads and mixes datasets according to proportions specified in `dataset_mixer`.
@@ -332,6 +431,14 @@ def mix_datasets(
             except DatasetGenerationError:
                 # If not, check local dataset
                 dataset = load_from_disk(os.path.join(ds, split))
+
+            dataset = maybe_normalize_preference_dataset(
+                dataset,
+                dataset_name=ds,
+                split_name=split,
+                is_main_process=is_main_process,
+                run_logger=run_logger,
+            )
 
             # Remove redundant columns to avoid schema conflicts on load
             dataset = dataset.remove_columns([col for col in dataset.column_names if col not in columns_to_keep])

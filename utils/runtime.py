@@ -12,7 +12,10 @@ from huggingface_hub import HfFolder, hf_hub_download
 from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
 
 from alignment import get_checkpoint, get_datasets, get_kbit_device_map, get_quantization_config, get_tokenizer
-from alignment.data import is_openai_format, maybe_convert_hh_to_openai_format, maybe_insert_system_message
+from alignment.data import (
+    is_openai_format,
+    maybe_insert_system_message,
+)
 from utils.checkpoint_io import (
     maybe_push_margin_dataset_summary,
     push_prevalidated_hf_artifacts,
@@ -132,8 +135,6 @@ def apply_preference_chat_template(
     # if change_template == "mistral":
     #     tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
 
-    example = maybe_convert_hh_to_openai_format(example)
-
     if not all(key in example.keys() for key in ("chosen", "rejected")):
         raise ValueError(
             "Could not format example as dialogue for preference training; expected either "
@@ -143,25 +144,29 @@ def apply_preference_chat_template(
         raise ValueError("Preference training expects OpenAI-style message dictionaries.")
 
     if "prompt" in example and is_openai_format(example["prompt"]):
-        prompt_messages = example["prompt"]
+        prompt_messages = [dict(message) for message in example["prompt"]]
         chosen_messages = example["chosen"]
         rejected_messages = example["rejected"]
     else:
-        prompt_messages = example["chosen"][:-1]
+        prompt_messages = [dict(message) for message in example["chosen"][:-1]]
         chosen_messages = example["chosen"][-1:]
         rejected_messages = example["rejected"][-1:]
 
     if auto_insert_empty_system_msg:
         maybe_insert_system_message(prompt_messages, tokenizer)
 
-    example["text_prompt"] = tokenizer.apply_chat_template(prompt_messages, tokenize=False)
-    example["text_chosen"] = tokenizer.apply_chat_template(chosen_messages, tokenize=False)
-    if tokenizer.bos_token and example["text_chosen"].startswith(tokenizer.bos_token):
-        example["text_chosen"] = example["text_chosen"][len(tokenizer.bos_token) :]
-    example["text_rejected"] = tokenizer.apply_chat_template(rejected_messages, tokenize=False)
-    if tokenizer.bos_token and example["text_rejected"].startswith(tokenizer.bos_token):
-        example["text_rejected"] = example["text_rejected"][len(tokenizer.bos_token) :]
-    return example
+    text_prompt = tokenizer.apply_chat_template(prompt_messages, tokenize=False)
+    text_chosen = tokenizer.apply_chat_template(chosen_messages, tokenize=False)
+    if tokenizer.bos_token and text_chosen.startswith(tokenizer.bos_token):
+        text_chosen = text_chosen[len(tokenizer.bos_token) :]
+    text_rejected = tokenizer.apply_chat_template(rejected_messages, tokenize=False)
+    if tokenizer.bos_token and text_rejected.startswith(tokenizer.bos_token):
+        text_rejected = text_rejected[len(tokenizer.bos_token) :]
+    return {
+        "text_prompt": text_prompt,
+        "text_chosen": text_chosen,
+        "text_rejected": text_rejected,
+    }
 
 
 def setup_run(model_args, data_args, training_args, run_logger):
@@ -256,6 +261,8 @@ def prepare_preference_datasets(model_args, data_args, training_args, run_logger
         splits=data_args.dataset_splits,
         configs=data_args.dataset_configs,
         columns_to_keep=PREFERENCE_COLUMNS,
+        is_main_process=_is_main_process(training_args),
+        run_logger=run_logger,
     )
     run_logger.info(
         f"Training on the following splits: {[split + ' : ' + str(dset.num_rows) for split, dset in raw_datasets.items()]}"

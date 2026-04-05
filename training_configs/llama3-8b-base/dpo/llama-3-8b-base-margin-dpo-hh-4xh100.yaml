@@ -22,7 +22,7 @@ beta: 0.01
 require_explicit_ref_model: true
 f_divergence_type: reverse_kl
 f_alpha_divergence_coef: 1.0
-margin_log_path: outputs/llama-3-8b-base-margin-dpo-hh-4xh100/margin_logs
+margin_log_path: /workplace/outputs/llama-3-8b-base-margin-dpo-hh-4xh100/margin_logs
 margin_log_steps: 5
 margin_save_full: false
 non_finite_logits_handling: error
