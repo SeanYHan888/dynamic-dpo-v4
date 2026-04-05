@@ -979,6 +979,7 @@ class TokenizedDPOTrainer(Trainer):
         model: Union[PreTrainedModel, nn.Module],
         inputs: Dict[str, Union[torch.Tensor, Any]],
         return_outputs: bool = False,
+        num_items_in_batch: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         if not self.use_dpo_data_collator:
             warnings.warn(
@@ -996,7 +997,7 @@ class TokenizedDPOTrainer(Trainer):
             return loss, metrics
         return loss
 
-    def get_batch_samples(self, model, batch: Dict[str, torch.LongTensor]) -> Tuple[str, str]:
+    def generate_batch_samples(self, model, batch: Dict[str, torch.LongTensor]) -> Tuple[str, str]:
         generate_context_manager = nullcontext if not self._peft_has_been_casted_to_bf16 else torch.cuda.amp.autocast
 
         with generate_context_manager():
@@ -1067,7 +1068,7 @@ class TokenizedDPOTrainer(Trainer):
             random_batch_dataset = dataloader.dataset.select(random_indices)
             random_batch = self.data_collator(random_batch_dataset)
             random_batch = self._prepare_inputs(random_batch)
-            policy_output_decoded = self.get_batch_samples(self.model, random_batch)
+            policy_output_decoded = self.generate_batch_samples(self.model, random_batch)
 
             self.log(
                 {
@@ -1081,12 +1082,12 @@ class TokenizedDPOTrainer(Trainer):
 
         return super().evaluation_loop(dataloader, description, prediction_loss_only, ignore_keys, metric_key_prefix)
 
-    def log(self, logs: Dict[str, float]) -> None:
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         train_eval = "train" if "loss" in logs else "eval"
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        super().log(logs)
+        super().log(logs, start_time)
 
     @wraps(Trainer.push_to_hub)
     def push_to_hub(self, commit_message: Optional[str] = "End of training", blocking: bool = True, **kwargs) -> str:

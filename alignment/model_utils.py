@@ -73,6 +73,10 @@ def get_active_chat_template(tokenizer: PreTrainedTokenizer) -> str:
     return chat_template or ""
 
 
+def has_chat_template(tokenizer: PreTrainedTokenizer) -> bool:
+    return bool(get_active_chat_template(tokenizer))
+
+
 def tokenizer_needs_chat_format_setup(tokenizer: PreTrainedTokenizer) -> bool:
     active_chat_template = get_active_chat_template(tokenizer)
     if "<|im_start|>" not in active_chat_template:
@@ -118,7 +122,7 @@ def get_tokenizer(
 
     if data_args.chat_template is not None:
         tokenizer.chat_template = data_args.chat_template
-    elif auto_set_chat_template and tokenizer.chat_template is None and tokenizer.default_chat_template is None:
+    elif auto_set_chat_template and not has_chat_template(tokenizer):
         tokenizer.chat_template = DEFAULT_CHAT_TEMPLATE
 
     return tokenizer

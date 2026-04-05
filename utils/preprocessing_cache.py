@@ -66,7 +66,7 @@ def configure_persistent_hf_cache(data_args, run_logger) -> Optional[str]:
 
 
 def build_prompt_preprocessing_metadata(tokenizer, data_args, prompt_format_fn) -> Dict[str, Any]:
-    active_chat_template = tokenizer.chat_template
+    active_chat_template = getattr(tokenizer, "chat_template", None)
     if active_chat_template is None:
         active_chat_template = getattr(tokenizer, "default_chat_template", None)
 
@@ -184,7 +184,7 @@ def _build_tokenized_manifest(trainer, args, dataset: Dataset, split_name: str) 
     tokenizer = trainer.tokenizer
     active_chat_template = prompt_metadata.get("active_chat_template")
     if active_chat_template is None:
-        active_chat_template = tokenizer.chat_template
+        active_chat_template = getattr(tokenizer, "chat_template", None)
     if active_chat_template is None:
         active_chat_template = getattr(tokenizer, "default_chat_template", None)
 

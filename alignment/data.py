@@ -35,9 +35,11 @@ def maybe_insert_system_message(messages, tokenizer):
         return
 
     # chat template can be one of two attributes, we check in order
-    chat_template = tokenizer.chat_template
+    chat_template = getattr(tokenizer, "chat_template", None)
     if chat_template is None:
-        chat_template = tokenizer.default_chat_template
+        chat_template = getattr(tokenizer, "default_chat_template", None)
+    if chat_template is None:
+        return
 
     # confirm the jinja template refers to a system message before inserting
     if "system" in chat_template or "<|im_start|>" in chat_template:
