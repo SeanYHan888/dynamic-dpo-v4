@@ -10,10 +10,12 @@ Date: 2026-03-31
 uv run python -m py_compile \
   scripts/run_alpha_dpo.py \
   scripts/run_beta_dpo.py \
+  scripts/run_epsilon_dpo.py \
   scripts/run_margin_dpo.py \
   scripts/run_simpo.py \
   scripts/alpha_dpo_trainer.py \
   scripts/beta_dpo_trainer.py \
+  scripts/epsilon_dpo_trainer.py \
   scripts/margin_dpo_trainer.py \
   scripts/simpo_trainer.py \
   scripts/tokenized_dpo_trainer.py \
@@ -65,7 +67,7 @@ Result: pass
 ### Runner module import smoke
 
 ```bash
-uv run python -c "import importlib, pathlib, sys; repo = pathlib.Path.cwd(); sys.path.insert(0, str(repo / 'scripts')); modules = ['run_alpha_dpo','run_beta_dpo','run_margin_dpo','run_simpo']; [importlib.import_module(name) for name in modules]; print('runner import smoke passed')"
+uv run python -c "import importlib, pathlib, sys; repo = pathlib.Path.cwd(); sys.path.insert(0, str(repo / 'scripts')); modules = ['run_alpha_dpo','run_beta_dpo','run_epsilon_dpo','run_margin_dpo','run_simpo']; [importlib.import_module(name) for name in modules]; print('runner import smoke passed')"
 ```
 
 Result: pass
