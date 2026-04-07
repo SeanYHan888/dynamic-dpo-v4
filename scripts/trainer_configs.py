@@ -64,7 +64,7 @@ class BetaDPOConfig(TokenizedPreferenceConfig):
     ema_momentum: float = field(default=0.9)
     beta_min: float = field(default=1e-3)
     sync_global_mask: bool = field(default=True)
-    deterministic_eval: bool = field(default=True)
+    deterministic_eval: bool = field(default=False)
     require_equal_local_batch_size: bool = field(default=True)
 
     def __post_init__(self):

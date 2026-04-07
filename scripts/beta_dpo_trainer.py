@@ -20,8 +20,7 @@ class BetaDPOTrainer(TokenizedDPOTrainer):
 
         device = self.accelerator.device
         self.r_gap_mean = torch.zeros((), device=device)
-        self.r_gap_std = torch.ones((), device=device)
-        self._gap_std_eps = torch.tensor(1e-6, device=device)
+        self.r_gap_std = torch.zeros((), device=device)
 
     def _is_distributed(self) -> bool:
         return dist.is_available() and dist.is_initialized() and self.accelerator.num_processes > 1
@@ -87,7 +86,7 @@ class BetaDPOTrainer(TokenizedDPOTrainer):
     def ema_update_gap_mean_and_std(self, r_gap_global: torch.Tensor) -> None:
         momentum = float(self.args.ema_momentum)
         batch_r_mean = r_gap_global.mean()
-        batch_r_std = r_gap_global.std(unbiased=False)
+        batch_r_std = r_gap_global.std() if r_gap_global.numel() > 1 else torch.zeros_like(batch_r_mean)
 
         self.r_gap_mean.mul_(momentum).add_(batch_r_mean, alpha=1.0 - momentum)
         self.r_gap_std.mul_(momentum).add_(batch_r_std, alpha=1.0 - momentum)
@@ -103,15 +102,19 @@ class BetaDPOTrainer(TokenizedDPOTrainer):
         if mode != "train" and self.args.deterministic_eval:
             return torch.ones_like(r_gap_global, dtype=torch.bool)
 
-        r_mean = self.r_gap_mean
-        r_std = torch.clamp(self.r_gap_std, min=self._gap_std_eps)
-        weight = torch.exp(-0.5 * ((r_gap_global - r_mean) / r_std).pow(2))
-        weight = torch.nan_to_num(weight, nan=0.0, posinf=0.0, neginf=0.0)
+        weight = torch.exp(-0.5 * ((r_gap_global - self.r_gap_mean) / self.r_gap_std).pow(2))
+        # The original implementation has undefined behavior when the running std is zero or the
+        # global batch has a single item. Fall back to uniform weights only for those degenerate
+        # cases so the standard path keeps the original beta-DPO math.
+        weight = torch.nan_to_num(weight, nan=1.0, posinf=1.0, neginf=0.0)
         if float(weight.sum()) <= 0.0:
             weight = torch.ones_like(weight)
 
         total = weight.numel()
-        keep = max(1, min(total, int(total * float(self.args.rho))))
+        keep = int(total * float(self.args.rho))
+        if total > 0 and keep <= 0:
+            keep = 1
+        keep = min(total, keep)
 
         if self.args.sync_global_mask and self._is_distributed():
             if self.accelerator.is_main_process:
@@ -163,12 +166,15 @@ class BetaDPOTrainer(TokenizedDPOTrainer):
         ref_chosen_logps = ref_chosen_logps.to(chosen_logps.device)
         ref_rejected_logps = ref_rejected_logps.to(chosen_logps.device)
 
-        logits = (chosen_logps - rejected_logps) - (ref_chosen_logps - ref_rejected_logps)
+        policy_logratios = chosen_logps - rejected_logps
+        ref_logratios = ref_chosen_logps - ref_rejected_logps
+        if getattr(self.args, "reference_free", False):
+            ref_logratios = torch.zeros_like(ref_logratios)
+        logits = policy_logratios - ref_logratios
         r_gap_local = (chosen_logps - ref_chosen_logps - rejected_logps + ref_rejected_logps).detach()
         r_gap_global = self._gather_training_tensor(r_gap_local)
 
-        if train_eval == "train":
-            self.ema_update_gap_mean_and_std(r_gap_global)
+        self.ema_update_gap_mean_and_std(r_gap_global)
 
         global_mask = self._sample_global_mask(r_gap_global, mode=train_eval)
         beta_used_raw, beta_used = self._compute_adaptive_beta(

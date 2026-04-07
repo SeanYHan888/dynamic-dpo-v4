@@ -21,7 +21,7 @@ alpha: 0.01
 ema_momentum: 0.9
 beta_min: 1.0e-3
 sync_global_mask: true
-deterministic_eval: true
+deterministic_eval: false
 require_equal_local_batch_size: true
 precompute_ref_log_probs: true
 
