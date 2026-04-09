@@ -33,7 +33,7 @@ remove_unused_columns: true
 
 # Evaluation and logging
 do_eval: true
-evaluation_strategy: steps
+eval_strategy: steps
 eval_steps: 100
 log_level: info
 logging_steps: 5

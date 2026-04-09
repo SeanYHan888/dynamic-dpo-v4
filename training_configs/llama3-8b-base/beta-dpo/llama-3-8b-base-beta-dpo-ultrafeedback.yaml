@@ -49,6 +49,7 @@ warmup_ratio: 0.1
 num_train_epochs: 1
 
 # Tokenization arguments
+truncation_mode: keep_start
 tokenization_mode: online
 tokenization_batch_size: 128
 reuse_tokenized_dataset: true
