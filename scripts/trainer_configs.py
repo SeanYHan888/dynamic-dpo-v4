@@ -10,7 +10,7 @@ class TokenizedPreferenceConfig(DPOConfig):
     model_init_kwargs: Optional[Dict[str, Any]] = field(default=None, repr=False)
     dataset_num_proc: Optional[int] = field(default=None)
     tokenization_mode: Literal["online", "offline_only", "reuse_only"] = field(default="online")
-    tokenization_batch_size: int = field(default=64)
+    tokenization_batch_size: int = field(default=128)
     post_tokenization_log_samples: int = field(default=0)
     post_tokenization_log_dir: Optional[str] = field(default=None)
     precompute_ref_batch_size: Optional[int] = field(default=None)
@@ -64,7 +64,7 @@ class BetaDPOConfig(TokenizedPreferenceConfig):
     ema_momentum: float = field(default=0.9)
     beta_min: float = field(default=1e-3)
     sync_global_mask: bool = field(default=True)
-    deterministic_eval: bool = field(default=True)
+    deterministic_eval: bool = field(default=False)
     require_equal_local_batch_size: bool = field(default=True)
 
     def __post_init__(self):
