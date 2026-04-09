@@ -105,6 +105,7 @@ def test_maybe_push_margin_dataset_summary_uses_override_repo_id(monkeypatch, tm
                 "p90": 0.4,
                 "max": 0.5,
                 "pos_frac": 0.75,
+                "sample": [0.1, 0.2, 0.3, 0.4],
             }
         ],
     )
@@ -142,10 +143,12 @@ def test_maybe_push_margin_dataset_summary_uses_override_repo_id(monkeypatch, tm
     assert calls[2][0] == "dataset_push"
     assert calls[2][1] == "org/custom-margin"
     assert calls[2][2]["split"] == "eval"
+    assert calls[2][3][0]["sample"] == [0.1, 0.2, 0.3, 0.4]
     assert calls[3][0] == "upload_file"
     assert calls[3][1]["repo_id"] == "org/custom-margin"
     assert calls[3][1]["repo_type"] == "dataset"
     assert b"org/model" in calls[3][1]["path_or_fileobj"]
+    assert b"`sample`" in calls[3][1]["path_or_fileobj"]
 
 
 def test_finalize_training_pushes_margin_dataset_after_model_upload(monkeypatch, tmp_path):

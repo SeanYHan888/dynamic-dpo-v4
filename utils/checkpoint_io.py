@@ -22,6 +22,8 @@ MARGIN_DATASET_COLUMNS = (
     "p90",
     "max",
     "pos_frac",
+    "sample",
+    "npy",
 )
 
 
@@ -224,7 +226,9 @@ def _build_margin_dataset_card(
         "- `median`\n"
         "- `p90`\n"
         "- `max`\n"
-        "- `pos_frac`\n\n"
+        "- `pos_frac`\n"
+        "- `sample` (per-example margins for the effective batch on that logged step)\n"
+        "- `npy` (optional path to the saved full margin array when `margin_save_full=true`)\n\n"
         "## Dataset Mixer\n\n"
         "```json\n"
         f"{dataset_mixer_json}\n"
