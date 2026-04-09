@@ -21,7 +21,7 @@ alpha: 0.01
 ema_momentum: 0.9
 beta_min: 1.0e-3
 sync_global_mask: true
-deterministic_eval: true
+deterministic_eval: false
 require_equal_local_batch_size: true
 precompute_ref_log_probs: true
 
@@ -42,7 +42,7 @@ optim: rmsprop
 max_length: 2048
 max_prompt_length: 1792
 tokenization_mode: reuse_only
-tokenization_batch_size: 64
+tokenization_batch_size: 128
 reuse_tokenized_dataset: true
 tokenized_dataset_cache_dir: null
 

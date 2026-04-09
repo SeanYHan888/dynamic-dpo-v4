@@ -1,0 +1,50 @@
+# Model arguments
+model_name_or_path: meta-llama/Meta-Llama-3-8B
+model_revision: main
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+
+# Data arguments
+chat_template: "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
+dataset_mixer:
+  HuggingFaceH4/ultrachat_200k: 1.0
+dataset_splits:
+  - train_sft
+  - test_sft
+preprocessing_num_workers: 12
+
+# Training arguments
+bf16: true
+per_device_train_batch_size: 16
+per_device_eval_batch_size: 16
+gradient_accumulation_steps: 1
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+learning_rate: 2.0e-05
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+num_train_epochs: 1
+max_steps: -1
+seed: 42
+max_seq_length: 2048
+
+# Evaluation and logging
+do_eval: true
+eval_strategy: steps
+eval_steps: 200
+log_level: info
+logging_steps: 5
+logging_strategy: steps
+
+# Output and checkpointing
+output_dir: outputs/llama-3-8b-base-sft-ultrachat-4xh200
+run_name: llama-3-8b-base-sft-ultrachat-4xh200
+overwrite_output_dir: true
+save_strategy: "no"
+
+# Hub and reporting
+push_to_hub: false
+hub_model_id: W-61/llama-3-8b-base-sft-ultrachat-4xh200
+report_to:
+  - wandb

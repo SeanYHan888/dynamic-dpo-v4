@@ -376,7 +376,7 @@ def _tokenize_dataset(trainer, args, dataset: Dataset, split_name: str) -> Datas
     tokenized_dataset = dataset.map(
         trainer.tokenize_batch,
         batched=True,
-        batch_size=getattr(args, "tokenization_batch_size", 64),
+        batch_size=getattr(args, "tokenization_batch_size", 128),
         num_proc=args.dataset_num_proc,
         desc=f"Tokenizing {split_name}",
     )

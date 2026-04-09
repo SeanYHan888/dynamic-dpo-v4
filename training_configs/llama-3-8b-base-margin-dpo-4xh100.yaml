@@ -1,16 +1,14 @@
 # Model arguments
-model_name_or_path: meta-llama/Llama-3.2-1B
+model_name_or_path: W-61/llama-3-8b-base-hh-harmless-sft-4xh100
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 
 # Data training arguments
 dataset_mixer:
-  Anthropic/hh-rlhf: 0.1
-dataset_configs:
-  - harmless-base
+  HuggingFaceH4/ultrafeedback_binarized: 0.1
 dataset_splits:
-  - train
-  - test
+  - train_prefs
+  - test_prefs
 preprocessing_num_workers: 8
 dataset_num_proc: 8
 use_persistent_hf_cache: true
@@ -22,15 +20,15 @@ beta: 0.01
 require_explicit_ref_model: true
 f_divergence_type: reverse_kl
 f_alpha_divergence_coef: 1.0
-margin_log_path: /workplace/outputs/llama-3-8b-base-margin-dpo-hh-4xh100/margin_logs
+margin_log_path: outputs/llama-3-8b-base-margin-dpo-4xh100-pilot/margin_logs
 margin_log_steps: 5
 margin_save_full: false
 non_finite_logits_handling: error
 precompute_ref_log_probs: false
 
-per_device_train_batch_size: 8
-per_device_eval_batch_size: 8
-gradient_accumulation_steps: 4
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 2
+gradient_accumulation_steps: 16
 dataloader_drop_last: true
 
 gradient_checkpointing: true
@@ -46,8 +44,7 @@ max_prompt_length: 512
 optim: adamw_torch
 
 tokenization_mode: online
-tokenization_batch_size: 64
-post_tokenization_log_samples: 10
+tokenization_batch_size: 128
 reuse_tokenized_dataset: true
 tokenized_dataset_cache_dir: .cache/tokenized_preferences
 
@@ -56,13 +53,13 @@ eval_strategy: "no"
 logging_steps: 5
 log_level: info
 
-output_dir: outputs/llama-3-8b-base-margin-dpo-hh-4xh100
-run_name: llama-3-8b-base-margin-dpo-hh-4xh100
+output_dir: outputs/llama-3-8b-base-margin-dpo-4xh100-pilot
+run_name: llama-3-8b-base-margin-dpo-4xh100-pilot
 save_strategy: "no"
 save_steps: 50
 save_total_limit: 2
 report_to:
   - wandb
 seed: 42
-push_to_hub: false
-hub_model_id: jackf857/llama-3-8b-base-margin-dpo-hh-4xh100
+push_to_hub: true
+hub_model_id: llama-3-8b-base-margin-dpo-4xh100-pilot
