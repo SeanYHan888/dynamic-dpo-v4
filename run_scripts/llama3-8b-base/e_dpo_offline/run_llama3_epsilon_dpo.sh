@@ -18,12 +18,9 @@ Environment overrides:
   HH_HELPFUL_SFT_DIR                 Override the default offline hh-helpful source checkpoint
   HH_HARMLESS_SFT_DIR                Override the default offline hh-harmless source checkpoint
   SOURCE_MODEL_ID                    Override the model card base_model metadata
-  HF_REPO_ID                         Override the upload target repo id
   RUN                                Override the generated run name
   SAVE_STEPS                         Default: 200
   SAVE_TOTAL_LIMIT                   Default: 2
-  SKIP_UPLOAD                        Default: 0
-  DELETE_STALE_REMOTE_ARTIFACTS      Set to 1 to delete stale remote model files before upload
 EOF
 }
 
@@ -43,9 +40,6 @@ cd "$REPO_ROOT"
 SCRATCH_ROOT="${SCRATCH_ROOT:-/scratch/${USER}/dynamic-dpo-v4}"
 SAVE_STEPS="${SAVE_STEPS:-200}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-2}"
-SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
-DELETE_STALE_REMOTE_ARTIFACTS="${DELETE_STALE_REMOTE_ARTIFACTS:-0}"
-
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -174,7 +168,6 @@ if [[ -z "$MODEL_NAME_OR_PATH" ]]; then
 fi
 
 SOURCE_MODEL_ID="${SOURCE_MODEL_ID:-$MODEL_NAME_OR_PATH}"
-HF_REPO_ID="${HF_REPO_ID:-$DEFAULT_REPO_ID}"
 if [[ -n "${RUN:-}" ]]; then
   if [[ "$RUN" == "$RUN_PREFIX"* ]]; then
     RUN="$RUN"
@@ -215,8 +208,7 @@ echo "Starting offline $VARIANT Epsilon-DPO run: $RUN"
 echo "Config: $CONFIG_PATH"
 echo "Local SFT checkpoint: $MODEL_NAME_OR_PATH"
 echo "Output dir: $RUN_DIR"
-echo "Hub repo: $HF_REPO_ID"
-echo "Skip upload: $SKIP_UPLOAD"
+echo "Upload mode: disabled for offline pipeline"
 
 accelerate launch \
   --config_file accelerate_configs/fsdp.yaml \
@@ -238,26 +230,6 @@ python tools/validate_and_upload.py \
   --skip-upload
 
 patch_model_card_base_model "$RUN_DIR/README.md" "$SOURCE_MODEL_ID"
-
-if [[ "$SKIP_UPLOAD" == "1" ]]; then
-  echo "Validation completed. Skipping upload by request."
-  exit 0
-fi
-
-require_hf_cli
-validate_hf_auth
-
-UPLOAD_ARGS=(
-  python tools/validate_and_upload.py
-  --checkpoint-dir "$RUN_DIR"
-  --repo-id "$HF_REPO_ID"
-  --commit-message "Upload validated Epsilon-DPO checkpoint"
-)
-
-if [[ "$DELETE_STALE_REMOTE_ARTIFACTS" == "1" ]]; then
-  UPLOAD_ARGS+=(--delete-stale-remote-artifacts)
-fi
-
-"${UPLOAD_ARGS[@]}"
-
-echo "Completed offline training, validation, and upload for $RUN"
+echo "Completed offline training and validation for $RUN"
+echo "Model upload is intentionally disabled in the offline pipeline."
+echo "When ready, upload manually with tools/validate_and_upload.py from $RUN_DIR"
