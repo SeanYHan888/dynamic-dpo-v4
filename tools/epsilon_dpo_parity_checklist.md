@@ -51,7 +51,7 @@ Recommended first pass:
 python tools/epsilon_dpo_parity.py \
   --mode compare_trajectory \
   --reference-python /path/to/reference-env/bin/python \
-  --config-path training_configs/llama3-8b-base/dpo/llama-3-8b-base-epsilon-dpo-helpful.yaml \
+  --config-path training_configs/llama3-8b-base/e-dpo/llama-3-8b-base-epsilon-dpo-helpful.yaml \
   --model-name-or-path <shared-debug-model> \
   --max-examples 4 \
   --train-batch-size 2 \
@@ -96,3 +96,26 @@ If parity fails, debug in this order:
 3. Sequence log-probs on one frozen batch.
 4. ε-step decisions.
 5. Beta update timing across accumulation boundaries.
+
+## Shared-Batch Scoring Debug
+
+If frozen-batch or trajectory parity fails, run one instrumented shared-batch debug pass:
+
+```bash
+python tools/epsilon_dpo_parity.py \
+  --mode compare_scoring_debug \
+  --reference-python /path/to/reference-env/bin/python \
+  --config-path training_configs/llama3-8b-base/e-dpo/llama-3-8b-base-epsilon-dpo-helpful.yaml \
+  --model-name-or-path <shared-debug-model> \
+  --max-examples 2 \
+  --train-batch-size 2 \
+  --gradient-accumulation-steps 1
+```
+
+This prints a summary containing:
+
+1. Whether prompt/completion token views match.
+2. The first mismatch in loss-bearing token ids, if any.
+3. The first mismatch in per-token log-probs, if any.
+
+The underlying reference/current debug dumps are saved to temporary `.pt` files and their paths are printed in the summary.
