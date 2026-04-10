@@ -299,3 +299,57 @@ class DPOConfig(trl.DPOConfig):
     )
     optim: Optional[str] = field(default="rmsprop")
     remove_unused_columns: bool = field(default=False)
+
+
+@dataclass
+class CPOConfig(trl.CPOConfig):
+    """
+    Repo-wrapped TRL CPO config with the same small defaults we already apply to DPO/SFT.
+    """
+
+    hub_model_revision: Optional[str] = field(
+        default="main",
+        metadata={"help": ("The Hub model branch to push the model to.")},
+    )
+    logging_first_step: bool = field(
+        default=True,
+        metadata={"help": ("Whether to log and evaluate the first global_step or not.")},
+    )
+    optim: Optional[str] = field(default="rmsprop")
+    remove_unused_columns: bool = field(default=False)
+
+
+@dataclass
+class KTOConfig(trl.KTOConfig):
+    """
+    Repo-wrapped TRL KTO config with the same small defaults we already apply to DPO/SFT.
+    """
+
+    hub_model_revision: Optional[str] = field(
+        default="main",
+        metadata={"help": ("The Hub model branch to push the model to.")},
+    )
+    logging_first_step: bool = field(
+        default=True,
+        metadata={"help": ("Whether to log and evaluate the first global_step or not.")},
+    )
+    optim: Optional[str] = field(default="rmsprop")
+    remove_unused_columns: bool = field(default=False)
+
+
+@dataclass
+class ORPOConfig(trl.ORPOConfig):
+    """
+    Repo-wrapped TRL ORPO config with the same small defaults we already apply to DPO/SFT.
+    """
+
+    hub_model_revision: Optional[str] = field(
+        default="main",
+        metadata={"help": ("The Hub model branch to push the model to.")},
+    )
+    logging_first_step: bool = field(
+        default=True,
+        metadata={"help": ("Whether to log and evaluate the first global_step or not.")},
+    )
+    optim: Optional[str] = field(default="rmsprop")
+    remove_unused_columns: bool = field(default=False)

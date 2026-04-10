@@ -3,6 +3,12 @@
 This repository contains preference-training code for:
 
 - SimPO
+- IPO
+- Robust DPO
+- CPO
+- KTO
+- ORPO
+- SLiC-HF
 - alpha-DPO
 - beta-DPO
 - margin-DPO
