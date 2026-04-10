@@ -65,7 +65,16 @@ case "$VARIANT" in
 esac
 
 HF_REPO_ID="${HF_REPO_ID:-$DEFAULT_REPO_ID}"
-RUN="${RUN:-$RUN_PREFIX-$(date +%Y%m%d-%H%M%S)}"
+if [[ -n "${RUN:-}" ]]; then
+  if [[ "$RUN" == "$RUN_PREFIX"* ]]; then
+    RUN="$RUN"
+  else
+    echo "Ignoring inherited RUN='$RUN' because it does not match expected prefix '$RUN_PREFIX'." >&2
+    RUN="$RUN_PREFIX-$(date +%Y%m%d-%H%M%S)"
+  fi
+else
+  RUN="$RUN_PREFIX-$(date +%Y%m%d-%H%M%S)"
+fi
 RUN_DIR="$SCRATCH_ROOT/outputs/$RUN"
 LOG_PATH="$RUN_DIR/train.log"
 
