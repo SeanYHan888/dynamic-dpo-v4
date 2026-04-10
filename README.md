@@ -13,6 +13,8 @@ This repository contains preference-training code for:
 - beta-DPO
 - margin-DPO
 
+For `KTO` on `HuggingFaceH4/ultrafeedback_binarized`, the repo uses a pairwise-derived adaptation rather than a native unary binary-feedback dataset: each `(prompt, chosen, rejected)` example is expanded into `(prompt, chosen, True)` and `(prompt, rejected, False)` rows before being passed to TRL 0.10.1's `KTOTrainer`.
+
 The main training entrypoints live in [scripts](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/scripts), shared runner-side infrastructure lives in [utils](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/utils), ops workflows live in [tools](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/tools), and runnable YAML configs live in [training_configs](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/training_configs). The inherited [alignment](/Users/seanmacbook/Research/dpo/dynamic-dpo-v4/alignment) package is intentionally kept unchanged.
 
 ## Setup

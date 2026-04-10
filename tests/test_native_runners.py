@@ -85,8 +85,8 @@ def test_run_ipo_constructs_dpo_trainer_with_ipo_loss(monkeypatch):
     trainer = captured["trainer"]
     assert training_args.loss_type == "ipo"
     assert trainer.kwargs["ref_model"] == "ref-model"
-    assert trainer.kwargs["model_init_kwargs"] == {"torch_dtype": "bfloat16"}
-    assert trainer.kwargs["ref_model_init_kwargs"] == {"torch_dtype": "bfloat16"}
+    assert "model_init_kwargs" not in trainer.kwargs
+    assert "ref_model_init_kwargs" not in trainer.kwargs
 
 
 def test_run_robust_dpo_constructs_dpo_trainer_with_robust_loss(monkeypatch):

@@ -24,6 +24,8 @@ gradient_checkpointing_kwargs:
 precompute_ref_log_probs: false
 
 # KTO arguments
+# This run uses pairwise-derived KTO data: each Ultrafeedback pair is expanded into
+# (prompt, chosen, True) and (prompt, rejected, False) rows before trainer tokenization.
 beta: 0.1
 desirable_weight: 1.0
 undesirable_weight: 1.0

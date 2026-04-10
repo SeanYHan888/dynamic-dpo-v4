@@ -46,8 +46,6 @@ def main():
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         peft_config=peft_config,
-        model_init_kwargs=training_args.model_init_kwargs if isinstance(model, str) else None,
-        ref_model_init_kwargs=training_args.model_init_kwargs if isinstance(ref_model, str) else None,
     )
 
     finalize_training(

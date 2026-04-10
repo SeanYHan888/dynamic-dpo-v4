@@ -24,6 +24,8 @@ Each runner owns CLI orchestration only:
 - instantiate the correct trainer
 - start training/eval/save flow
 
+`run_kto.py` uses a pairwise-derived adaptation for Ultrafeedback: each preference pair is expanded into one desirable and one undesirable unary example before passing the data to TRL's `KTOTrainer`.
+
 ## Trainers
 
 - `simpo_trainer.py`
