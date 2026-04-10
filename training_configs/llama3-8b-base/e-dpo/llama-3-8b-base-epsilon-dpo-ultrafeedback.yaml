@@ -28,9 +28,9 @@ epsilon: 0.01
 non_finite_logits_handling: error
 
 # Batch and sequence arguments
-per_device_train_batch_size: 16
-per_device_eval_batch_size: 16
-gradient_accumulation_steps: 1
+per_device_train_batch_size: 8
+per_device_eval_batch_size: 8
+gradient_accumulation_steps: 2
 dataloader_drop_last: true
 max_length: 2048
 max_prompt_length: 1800
