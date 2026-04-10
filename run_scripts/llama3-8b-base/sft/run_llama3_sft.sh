@@ -29,7 +29,7 @@ shift
 EXTRA_ARGS=("$@")
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 cd "$REPO_ROOT"
 
 BASE_MODEL_ID="${BASE_MODEL_ID:-meta-llama/Meta-Llama-3-8B}"
