@@ -129,6 +129,7 @@ case "$VARIANT" in
     CONFIG_PATH="training_configs/llama3-8b-base/dpo/llama-3-8b-base-margin-dpo-ultrafeedback.yaml"
     RUN_PREFIX="llama-3-8b-base-margin-dpo-ultrafeedback-8xh200"
     DEFAULT_REPO_ID="W-61/llama-3-8b-base-margin-dpo-ultrafeedback-8xh200"
+    DEFAULT_SOURCE_MODEL_ID="W-61/llama-3-8b-base-sft-ultrachat-8xh200"
     VARIANT_MODEL_ENV="${ULTRAFEEDBACK_SFT_DIR:-}"
     DEFAULT_MODEL_GLOB="$SCRATCH_ROOT/outputs/llama-3-8b-base-sft-ultrachat-8xh200-*"
     ;;
@@ -136,6 +137,7 @@ case "$VARIANT" in
     CONFIG_PATH="training_configs/llama3-8b-base/dpo/llama-3-8b-base-margin-dpo-hh-helpful.yaml"
     RUN_PREFIX="llama-3-8b-base-margin-dpo-hh-helpful-8xh200"
     DEFAULT_REPO_ID="W-61/llama-3-8b-base-margin-dpo-hh-helpful-8xh200"
+    DEFAULT_SOURCE_MODEL_ID="W-61/llama-3-8b-base-sft-hh-helpful-8xh200"
     VARIANT_MODEL_ENV="${HH_HELPFUL_SFT_DIR:-}"
     DEFAULT_MODEL_GLOB="$SCRATCH_ROOT/outputs/llama-3-8b-base-sft-hh-helpful-8xh200-*"
     ;;
@@ -143,6 +145,7 @@ case "$VARIANT" in
     CONFIG_PATH="training_configs/llama3-8b-base/dpo/llama-3-8b-base-margin-dpo-hh-harmless.yaml"
     RUN_PREFIX="llama-3-8b-base-margin-dpo-hh-harmless-8xh200"
     DEFAULT_REPO_ID="W-61/llama-3-8b-base-margin-dpo-hh-harmless-8xh200"
+    DEFAULT_SOURCE_MODEL_ID="W-61/llama-3-8b-base-sft-hh-harmless-8xh200"
     VARIANT_MODEL_ENV="${HH_HARMLESS_SFT_DIR:-}"
     DEFAULT_MODEL_GLOB="$SCRATCH_ROOT/outputs/llama-3-8b-base-sft-hh-harmless-8xh200-*"
     ;;
@@ -167,7 +170,7 @@ if [[ -z "$MODEL_NAME_OR_PATH" ]]; then
   exit 1
 fi
 
-SOURCE_MODEL_ID="${SOURCE_MODEL_ID:-$MODEL_NAME_OR_PATH}"
+SOURCE_MODEL_ID="${SOURCE_MODEL_ID:-$DEFAULT_SOURCE_MODEL_ID}"
 if [[ -n "${RUN:-}" ]]; then
   if [[ "$RUN" == "$RUN_PREFIX"* ]]; then
     RUN="$RUN"
