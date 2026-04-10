@@ -132,6 +132,7 @@ patch_model_card_base_model() {
   local readme_path="$1"
   python - "$readme_path" "$BASE_MODEL_ID" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 readme_path = Path(sys.argv[1])
@@ -146,7 +147,13 @@ for idx, line in enumerate(lines):
     if line.startswith("base_model: "):
         lines[idx] = f"base_model: {base_model_id}"
         updated = True
-        break
+    elif line.startswith("This model is a fine-tuned version of "):
+        lines[idx] = re.sub(
+            r"^This model is a fine-tuned version of \[.*?\]\(.*?\)",
+            f"This model is a fine-tuned version of [{base_model_id}](https://huggingface.co/{base_model_id})",
+            line,
+        )
+        updated = True
 
 if updated:
     readme_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
