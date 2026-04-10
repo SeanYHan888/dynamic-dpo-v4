@@ -22,7 +22,7 @@ Environment overrides:
   RUN                                Override the generated run name
   SAVE_STEPS                         Default: 200
   SAVE_TOTAL_LIMIT                   Default: 2
-  SKIP_UPLOAD                        Default: 1 for offline runs
+  SKIP_UPLOAD                        Default: 0
   DELETE_STALE_REMOTE_ARTIFACTS      Set to 1 to delete stale remote model files before upload
 EOF
 }
@@ -43,7 +43,7 @@ cd "$REPO_ROOT"
 SCRATCH_ROOT="${SCRATCH_ROOT:-/scratch/${USER}/dynamic-dpo-v4}"
 SAVE_STEPS="${SAVE_STEPS:-200}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-2}"
-SKIP_UPLOAD="${SKIP_UPLOAD:-1}"
+SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
 DELETE_STALE_REMOTE_ARTIFACTS="${DELETE_STALE_REMOTE_ARTIFACTS:-0}"
 
 require_command() {
