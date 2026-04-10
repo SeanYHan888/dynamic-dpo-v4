@@ -296,6 +296,39 @@ def _loss_token_rows(
     return rows
 
 
+def _reward_decomposition(
+    trainer: Any,
+    chosen_logps: torch.Tensor,
+    rejected_logps: torch.Tensor,
+    ref_chosen_logps: torch.Tensor,
+    ref_rejected_logps: torch.Tensor,
+    steps: torch.Tensor,
+) -> Dict[str, Any]:
+    losses, chosen_rewards, rejected_rewards = trainer.dpo_loss(
+        chosen_logps,
+        rejected_logps,
+        ref_chosen_logps,
+        ref_rejected_logps,
+        steps,
+    )
+    updated_beta = trainer.beta / (1 + trainer.epsilon * steps.to(chosen_logps.dtype))
+    reward_margin = chosen_rewards - rejected_rewards
+    reward_accuracy = (chosen_rewards > rejected_rewards).float()
+    return {
+        "chosen_logps": chosen_logps.detach().cpu(),
+        "rejected_logps": rejected_logps.detach().cpu(),
+        "ref_chosen_logps": ref_chosen_logps.detach().cpu(),
+        "ref_rejected_logps": ref_rejected_logps.detach().cpu(),
+        "steps": steps.detach().cpu(),
+        "updated_beta": updated_beta.detach().cpu(),
+        "losses": losses.detach().cpu(),
+        "chosen_rewards": chosen_rewards.detach().cpu(),
+        "rejected_rewards": rejected_rewards.detach().cpu(),
+        "reward_margins": reward_margin.detach().cpu(),
+        "reward_accuracies": reward_accuracy.detach().cpu(),
+    }
+
+
 def _current_example_token_view(trainer: Any, batch: Dict[str, torch.Tensor]) -> List[Dict[str, Any]]:
     tokenizer = trainer.tokenizer
     example_views: List[Dict[str, Any]] = []
@@ -423,6 +456,27 @@ def _current_scoring_debug_payload(trainer: Any) -> Dict[str, Any]:
     batch = trainer.data_collator([trainer.train_dataset[i] for i in range(len(trainer.train_dataset))])
     policy_output = trainer._epsilon_forward(trainer.model, batch, logit_source="policy")
     reference_output = trainer.compute_reference_model_output(batch)
+    len_chosen = policy_output["chosen_logps"].shape[0]
+    p_epsilon_logits = ((1 + trainer.epsilon) * policy_output["scoring_logits"]) - (
+        trainer.epsilon * reference_output["scoring_logits"]
+    )
+    n_epsilon_logits = ((1 - trainer.epsilon) * policy_output["scoring_logits"]) + (
+        trainer.epsilon * reference_output["scoring_logits"]
+    )
+    p_epsilon_scores = trainer._score_aligned_logits(
+        p_epsilon_logits,
+        policy_output["safe_labels"],
+        policy_output["loss_mask"],
+    )
+    n_epsilon_scores = trainer._score_aligned_logits(
+        n_epsilon_logits,
+        policy_output["safe_labels"],
+        policy_output["loss_mask"],
+    )
+    policy_logratios = policy_output["chosen_logps"] - policy_output["rejected_logps"]
+    p_epsilon_logratios = p_epsilon_scores[:len_chosen] - p_epsilon_scores[len_chosen:]
+    n_epsilon_logratios = n_epsilon_scores[:len_chosen] - n_epsilon_scores[len_chosen:]
+    steps = trainer._compute_steps(policy_logratios, p_epsilon_logratios, n_epsilon_logratios)
     concatenated_batch = trainer.concatenated_inputs(
         batch,
         is_encoder_decoder=trainer.is_encoder_decoder,
@@ -438,9 +492,15 @@ def _current_scoring_debug_payload(trainer: Any) -> Dict[str, Any]:
             key: value.detach().cpu() if isinstance(value, torch.Tensor) else value
             for key, value in concatenated_batch.items()
         },
+        "reward_decomposition": _reward_decomposition(
+            trainer,
+            policy_output["chosen_logps"],
+            policy_output["rejected_logps"],
+            reference_output["chosen_logps"],
+            reference_output["rejected_logps"],
+            steps,
+        ),
         "policy": {
-            "chosen_logps": policy_output["chosen_logps"].detach().cpu(),
-            "rejected_logps": policy_output["rejected_logps"].detach().cpu(),
             "safe_labels": policy_output["safe_labels"].detach().cpu(),
             "loss_mask": policy_output["loss_mask"].detach().cpu(),
             "per_token_logps": policy_output["per_token_logps"].detach().cpu(),
@@ -452,8 +512,6 @@ def _current_scoring_debug_payload(trainer: Any) -> Dict[str, Any]:
             ),
         },
         "reference": {
-            "chosen_logps": reference_output["chosen_logps"].detach().cpu(),
-            "rejected_logps": reference_output["rejected_logps"].detach().cpu(),
             "safe_labels": reference_output["safe_labels"].detach().cpu(),
             "loss_mask": reference_output["loss_mask"].detach().cpu(),
             "per_token_logps": reference_output["per_token_logps"].detach().cpu(),
@@ -472,10 +530,20 @@ def _reference_scoring_debug_payload(trainer: Any) -> Dict[str, Any]:
     batch = trainer.data_collator([trainer.train_dataset[i] for i in range(len(trainer.train_dataset))])
     policy_debug = _reference_debug_forward(trainer, trainer.model, batch)
     reference_debug = _reference_debug_forward(trainer, trainer.ref_model, batch)
+    ref_model_output = trainer.compute_ref_log_probs(batch)
+    model_output = trainer.concatenated_forward(trainer.model, batch, ref_model_output["logits"])
     payload = {
         "batch": {key: value.detach().cpu() if isinstance(value, torch.Tensor) else value for key, value in batch.items()},
         "policy": policy_debug,
         "reference": reference_debug,
+        "reward_decomposition": _reward_decomposition(
+            trainer,
+            model_output["chosen_logps"],
+            model_output["rejected_logps"],
+            ref_model_output["chosen_logps"],
+            ref_model_output["rejected_logps"],
+            model_output["steps"],
+        ),
     }
     return payload
 
@@ -516,6 +584,26 @@ def _first_loss_token_mismatch(
 
 
 def _scoring_debug_summary(reference_payload: Dict[str, Any], current_payload: Dict[str, Any], atol: float, rtol: float) -> Dict[str, Any]:
+    reward_order_flip = None
+    reference_reward_decomp = reference_payload["reward_decomposition"]
+    current_reward_decomp = current_payload["reward_decomposition"]
+    reference_accuracies = reference_reward_decomp["reward_accuracies"].tolist()
+    current_accuracies = current_reward_decomp["reward_accuracies"].tolist()
+    for example_index, (reference_accuracy, current_accuracy) in enumerate(zip(reference_accuracies, current_accuracies)):
+        if bool(reference_accuracy) != bool(current_accuracy):
+            reward_order_flip = {
+                "example_index": example_index,
+                "reference": {
+                    key: _scalarize(value[example_index]) if isinstance(value, torch.Tensor) and value.ndim > 0 else _scalarize(value)
+                    for key, value in reference_reward_decomp.items()
+                },
+                "current": {
+                    key: _scalarize(value[example_index]) if isinstance(value, torch.Tensor) and value.ndim > 0 else _scalarize(value)
+                    for key, value in current_reward_decomp.items()
+                },
+            }
+            break
+
     summary: Dict[str, Any] = {
         "example_token_view_matches": reference_payload["policy"]["example_token_view"] == current_payload["example_token_view"],
         "policy_loss_token_mismatch": _first_loss_token_mismatch(
@@ -530,6 +618,7 @@ def _scoring_debug_summary(reference_payload: Dict[str, Any], current_payload: D
             atol=atol,
             rtol=rtol,
         ),
+        "first_reward_order_flip": reward_order_flip,
     }
     return summary
 
