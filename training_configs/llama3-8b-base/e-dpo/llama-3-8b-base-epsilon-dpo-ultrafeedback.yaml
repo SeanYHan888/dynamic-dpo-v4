@@ -1,16 +1,16 @@
 # Model arguments
-model_name_or_path: W-61/llama-3-8b-base-sft-hh-helpful-4xh200
+model_name_or_path: W-61/llama-3-8b-base-sft-ultrachat-4xh200
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 
 # Data arguments
 dataset_mixer:
-  Anthropic/hh-rlhf: 1.0
+  HuggingFaceH4/ultrafeedback_binarized: 1.0
 dataset_configs:
-  - helpful-base
+  - default
 dataset_splits:
-  - train
-  - test
+  - train_prefs
+  - test_prefs
 preprocessing_num_workers: 12
 dataset_num_proc: 12
 use_persistent_hf_cache: true
@@ -32,8 +32,8 @@ per_device_train_batch_size: 16
 per_device_eval_batch_size: 16
 gradient_accumulation_steps: 1
 dataloader_drop_last: true
-max_length: 512
-max_prompt_length: 256
+max_length: 2048
+max_prompt_length: 1800
 
 # Optimization arguments
 optim: adamw_torch
@@ -43,6 +43,7 @@ warmup_ratio: 0.1
 num_train_epochs: 1
 
 # Tokenization arguments
+truncation_mode: keep_start
 tokenization_mode: online
 tokenization_batch_size: 128
 reuse_tokenized_dataset: true
@@ -53,11 +54,11 @@ logging_steps: 5
 log_level: info
 do_eval: true
 eval_strategy: steps
-eval_steps: 100
+eval_steps: 200
 
 # Output and checkpointing
-output_dir: outputs/llama-3-8b-base-epsilon-dpo-hh-helpful
-run_name: llama-3-8b-base-epsilon-dpo-hh-helpful
+output_dir: outputs/llama-3-8b-base-epsilon-dpo-ultrafeedback
+run_name: llama-3-8b-base-epsilon-dpo-ultrafeedback
 save_strategy: "no"
 save_steps: 50
 save_total_limit: 2
@@ -66,4 +67,4 @@ save_total_limit: 2
 report_to:
   - wandb
 push_to_hub: false
-hub_model_id: W-61/llama-3-8b-base-epsilon-dpo-hh-helpful
+hub_model_id: W-61/llama-3-8b-base-epsilon-dpo-ultrafeedback
