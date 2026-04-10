@@ -66,7 +66,4 @@ save_total_limit: 2
 report_to:
   - wandb
 push_to_hub: false
-hub_model_id: jackf857/llama-3-8b-base-epsilon-dpo-hh-harmless
-push_margin_dataset: false
-hub_margin_dataset_id: jackf857/llama-3-8b-base-epsilon-dpo-hh-harmless-margin-log
-margin_dataset_split: train
+hub_model_id: W-61/llama-3-8b-base-epsilon-dpo-hh-harmless
