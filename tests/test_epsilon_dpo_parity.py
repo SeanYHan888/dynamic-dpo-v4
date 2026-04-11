@@ -8,7 +8,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PARITY_CONFIG = REPO_ROOT / "training_configs" / "llama3-8b-base" / "dpo" / "llama-3-8b-base-epsilon-dpo-helpful.yaml"
+DEFAULT_PARITY_CONFIG = REPO_ROOT / "training_configs" / "llama3-8b-base" / "e-dpo" / "llama-3-8b-base-epsilon-dpo-helpful.yaml"
 
 
 @pytest.mark.skipif(

@@ -129,3 +129,17 @@ class EpsilonDPOConfig(TokenizedPreferenceConfig):
             self.loss_type = "sigmoid"
 
         super().__post_init__()
+
+
+@dataclass
+class SLiCHFConfig(TokenizedPreferenceConfig):
+    trainer_type: str = field(default="slic_hf")
+    slic_margin: float = field(default=1.0)
+    slic_lambda: float = field(default=1.0)
+
+    def __post_init__(self):
+        if self.slic_margin < 0.0:
+            raise ValueError("slic_margin must be >= 0.")
+        if self.slic_lambda < 0.0:
+            raise ValueError("slic_lambda must be >= 0.")
+        super().__post_init__()

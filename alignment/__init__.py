@@ -1,6 +1,6 @@
 __version__ = "0.3.0.dev0"
 
-from .configs import DataArguments, DPOConfig, H4ArgumentParser, ModelArguments, SFTConfig
+from .configs import CPOConfig, DataArguments, DPOConfig, H4ArgumentParser, KTOConfig, ModelArguments, ORPOConfig, SFTConfig
 from .data import apply_chat_template, get_datasets
 # from .decontaminate import decontaminate_humaneval
 from .model_utils import (
@@ -17,9 +17,12 @@ from .model_utils import (
 
 __all__ = [
     "DataArguments",
+    "CPOConfig",
     "DPOConfig",
     "H4ArgumentParser",
+    "KTOConfig",
     "ModelArguments",
+    "ORPOConfig",
     "SFTConfig",
     "apply_chat_template",
     "get_datasets",

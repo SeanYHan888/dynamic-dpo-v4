@@ -1,0 +1,63 @@
+# Model arguments
+model_name_or_path: W-61/llama-3-8b-base-sft-ultrachat-4xh200
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+
+# Data arguments
+dataset_mixer:
+  HuggingFaceH4/ultrafeedback_binarized: 1.0
+dataset_configs:
+  - default
+dataset_splits:
+  - train_prefs
+  - test_prefs
+preprocessing_num_workers: 12
+dataset_num_proc: 12
+use_persistent_hf_cache: true
+hf_cache_dir: null
+
+# Training arguments
+bf16: true
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+# CPO arguments
+loss_type: sigmoid
+beta: 0.1
+cpo_alpha: 1.0
+
+# Batch and sequence arguments
+per_device_train_batch_size: 16
+per_device_eval_batch_size: 16
+gradient_accumulation_steps: 1
+dataloader_drop_last: true
+max_length: 2048
+max_prompt_length: 1800
+
+# Optimization arguments
+optim: adamw_torch
+learning_rate: 5.0e-7
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+num_train_epochs: 1
+
+# Evaluation and logging
+do_eval: true
+eval_strategy: steps
+eval_steps: 200
+logging_steps: 10
+log_level: info
+
+# Output and checkpointing
+seed: 42
+output_dir: outputs/llama-3-8b-base-cpo-ultrafeedback-4xh200
+run_name: llama-3-8b-base-cpo-ultrafeedback-4xh200
+save_strategy: "no"
+save_total_limit: 2
+
+# Hub and reporting
+report_to:
+  - wandb
+push_to_hub: false
+hub_model_id: W-61/llama-3-8b-base-cpo-ultrafeedback-4xh200

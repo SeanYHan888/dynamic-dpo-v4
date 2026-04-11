@@ -7,11 +7,20 @@ from typing import Iterable
 
 import torch
 import transformers
-from transformers import set_seed
+from peft import PeftConfig, PeftModel
+from transformers import AutoModelForCausalLM, set_seed
 from huggingface_hub import HfFolder, hf_hub_download
 from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
 
-from alignment import get_checkpoint, get_datasets, get_kbit_device_map, get_quantization_config, get_tokenizer
+from alignment import (
+    get_checkpoint,
+    get_datasets,
+    get_kbit_device_map,
+    get_peft_config,
+    get_quantization_config,
+    get_tokenizer,
+    is_adapter_model,
+)
 from alignment.data import (
     is_openai_format,
     maybe_insert_system_message,
@@ -295,6 +304,43 @@ def prepare_preference_datasets(model_args, data_args, training_args, run_logger
 
     training_args.model_init_kwargs = build_model_init_kwargs(model_args, training_args)
     return raw_datasets, tokenizer
+
+
+def prepare_pairwise_preference_datasets(model_args, data_args, training_args, run_logger):
+    return prepare_preference_datasets(model_args, data_args, training_args, run_logger)
+
+
+def _preference_dataset_to_kto(dataset):
+    return dataset.map(
+        lambda batch: {
+            "prompt": [prompt for prompt in batch["prompt"] for _ in range(2)],
+            "completion": [completion for chosen, rejected in zip(batch["chosen"], batch["rejected"]) for completion in (chosen, rejected)],
+            "label": [label for _ in batch["prompt"] for label in (True, False)],
+        },
+        batched=True,
+        remove_columns=list(dataset.column_names),
+        desc="Expanding pairwise preferences into KTO rows",
+        load_from_cache_file=False,
+    )
+
+
+def prepare_kto_datasets(model_args, data_args, training_args, run_logger):
+    raw_datasets, tokenizer = prepare_preference_datasets(model_args, data_args, training_args, run_logger)
+
+    converted_datasets = {}
+    for split_name, dataset in raw_datasets.items():
+        converted_datasets[split_name] = _preference_dataset_to_kto(dataset)
+
+    if "train" in converted_datasets:
+        run_logger.info(
+            "Prepared KTO datasets with train rows doubled from %s pairwise samples to %s unary samples.",
+            len(raw_datasets["train"]),
+            len(converted_datasets["train"]),
+        )
+
+    return converted_datasets, tokenizer
+
+
 def build_model_init_kwargs(model_args, training_args):
     torch_dtype = normalize_torch_dtype(model_args.torch_dtype)
     quantization_config = get_quantization_config(model_args)
@@ -307,6 +353,61 @@ def build_model_init_kwargs(model_args, training_args):
         "quantization_config": quantization_config,
         "attn_implementation": model_args.attn_implementation,
     }
+
+
+def prepare_trl_trainer_models(model_args, training_args, run_logger, *, require_reference_model: bool):
+    model_init_kwargs = build_model_init_kwargs(model_args, training_args)
+    training_args.model_init_kwargs = dict(model_init_kwargs)
+
+    if hasattr(training_args, "ref_model_init_kwargs"):
+        training_args.ref_model_init_kwargs = dict(model_init_kwargs) if require_reference_model else None
+
+    peft_config = get_peft_config(model_args)
+    model = model_args.model_name_or_path
+    ref_model = model_args.model_name_or_path if require_reference_model else None
+
+    if is_adapter_model(model_args.model_name_or_path, model_args.model_revision) is True:
+        run_logger.info("Loading adapter-backed model for native TRL trainer construction.")
+        peft_model_config = PeftConfig.from_pretrained(
+            model_args.model_name_or_path,
+            revision=model_args.model_revision,
+        )
+
+        base_model = AutoModelForCausalLM.from_pretrained(
+            peft_model_config.base_model_name_or_path,
+            **model_init_kwargs,
+        )
+        model = PeftModel.from_pretrained(
+            base_model,
+            model_args.model_name_or_path,
+            revision=model_args.model_revision,
+        )
+        peft_config = None
+        training_args.model_init_kwargs = None
+
+        if require_reference_model and not model_args.use_peft:
+            ref_base_model = AutoModelForCausalLM.from_pretrained(
+                peft_model_config.base_model_name_or_path,
+                **model_init_kwargs,
+            )
+            ref_model = PeftModel.from_pretrained(
+                ref_base_model,
+                model_args.model_name_or_path,
+                revision=model_args.model_revision,
+            )
+        else:
+            ref_model = None
+
+        if hasattr(training_args, "ref_model_init_kwargs"):
+            training_args.ref_model_init_kwargs = None
+        return model, ref_model, peft_config
+
+    if require_reference_model and model_args.use_peft:
+        ref_model = None
+        if hasattr(training_args, "ref_model_init_kwargs"):
+            training_args.ref_model_init_kwargs = None
+
+    return model, ref_model, peft_config
 
 
 def finalize_training(trainer, training_args, model_args, data_args, raw_datasets, run_logger, tags: Iterable[str]):
