@@ -1,0 +1,79 @@
+# Model arguments
+model_name_or_path: outputs/qwen3-8b-base-ultrachat-sft-4xh100
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+
+# Data arguments
+dataset_mixer:
+  HuggingFaceH4/ultrafeedback_binarized: 1.0
+dataset_configs:
+  - default
+dataset_splits:
+  - train_prefs
+  - test_prefs
+preprocessing_num_workers: 8
+dataset_num_proc: 8
+use_persistent_hf_cache: true
+hf_cache_dir: null
+
+# Training arguments
+bf16: true
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+# DPO arguments
+f_divergence_type: reverse_kl
+f_alpha_divergence_coef: 1.0
+beta: 0.01
+require_explicit_ref_model: true
+precompute_ref_log_probs: false
+non_finite_logits_handling: error
+
+# Margin logging
+margin_log_path: outputs/qwen3-8b-base-margin-dpo-4xh100/margin_logs
+margin_log_steps: 1
+margin_save_full: true
+
+# Batch and sequence arguments
+per_device_train_batch_size: 2
+per_device_eval_batch_size: 2
+gradient_accumulation_steps: 8
+dataloader_drop_last: true
+max_length: 2048
+max_prompt_length: 1800
+
+# Optimization arguments
+optim: adamw_torch
+learning_rate: 5.0e-7
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+num_train_epochs: 1
+
+# Tokenization arguments
+truncation_mode: keep_start
+tokenization_mode: online
+tokenization_batch_size: 128
+reuse_tokenized_dataset: true
+tokenized_dataset_cache_dir: .cache/tokenized_preferences
+
+# Evaluation and logging
+logging_steps: 5
+log_level: info
+do_eval: true
+eval_strategy: steps
+eval_steps: 200
+
+# Output and checkpointing
+seed: 42
+output_dir: outputs/qwen3-8b-base-margin-dpo-4xh100
+run_name: qwen3-8b-base-margin-dpo-4xh100
+save_strategy: "no"
+save_steps: 50
+save_total_limit: 2
+
+# Hub and reporting
+report_to:
+  - wandb
+push_to_hub: false
+hub_model_id: qwen3-8b-base-margin-dpo-4xh100
