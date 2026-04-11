@@ -11,7 +11,7 @@ dataset_configs:
 dataset_splits:
   - train
   - test
-preprocessing_num_workers: 8
+preprocessing_num_workers: 12
 dataset_num_proc: 8
 use_persistent_hf_cache: true
 hf_cache_dir: null
@@ -34,9 +34,9 @@ deterministic_eval: true
 require_equal_local_batch_size: true
 
 # Batch and sequence arguments
-per_device_train_batch_size: 8
-per_device_eval_batch_size: 8
-gradient_accumulation_steps: 2
+per_device_train_batch_size: 16
+per_device_eval_batch_size: 16
+gradient_accumulation_steps: 1
 dataloader_drop_last: true
 max_length: 512
 max_prompt_length: 256
@@ -58,7 +58,7 @@ tokenized_dataset_cache_dir: .cache/tokenized_preferences
 do_eval: true
 eval_strategy: steps
 eval_steps: 100
-logging_steps: 5
+logging_steps: 10
 log_level: info
 
 # Output and checkpointing

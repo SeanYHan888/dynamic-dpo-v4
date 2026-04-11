@@ -11,7 +11,7 @@ dataset_configs:
 dataset_splits:
   - train_prefs
   - test_prefs
-preprocessing_num_workers: 8
+preprocessing_num_workers: 12
 dataset_num_proc: 8
 use_persistent_hf_cache: true
 hf_cache_dir: null
@@ -24,7 +24,7 @@ gradient_checkpointing_kwargs:
 precompute_ref_log_probs: false
 
 # Beta-DPO arguments
-beta: 0.01
+beta: 0.1
 rho: 0.8
 alpha: 0.6
 ema_momentum: 0.9
@@ -34,9 +34,9 @@ deterministic_eval: true
 require_equal_local_batch_size: true
 
 # Batch and sequence arguments
-per_device_train_batch_size: 2
-per_device_eval_batch_size: 2
-gradient_accumulation_steps: 8
+per_device_train_batch_size: 8
+per_device_eval_batch_size: 8
+gradient_accumulation_steps: 2
 dataloader_drop_last: true
 max_length: 2048
 max_prompt_length: 1800
@@ -59,7 +59,7 @@ tokenized_dataset_cache_dir: .cache/tokenized_preferences
 do_eval: true
 eval_strategy: steps
 eval_steps: 200
-logging_steps: 5
+logging_steps: 10
 log_level: info
 
 # Output and checkpointing
