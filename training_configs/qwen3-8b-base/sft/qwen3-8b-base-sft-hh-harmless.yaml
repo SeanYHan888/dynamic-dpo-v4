@@ -6,15 +6,19 @@ attn_implementation: flash_attention_2
 
 # Data arguments
 dataset_mixer:
-  HuggingFaceH4/ultrachat_200k: 1.0
+  Anthropic/hh-rlhf: 1.0
+dataset_configs:
+  - harmless-base
 dataset_splits:
-  - train_sft
-  - test_sft
+  - train
+  - test
 preprocessing_num_workers: 8
 
 # Training arguments
 bf16: true
-gradient_accumulation_steps: 16
+per_device_train_batch_size: 8
+per_device_eval_batch_size: 8
+gradient_accumulation_steps: 4
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
@@ -24,26 +28,28 @@ warmup_ratio: 0.1
 num_train_epochs: 1
 max_steps: -1
 seed: 42
-max_seq_length: 2048
-per_device_train_batch_size: 2
-per_device_eval_batch_size: 2
+max_seq_length: 512
+remove_unused_columns: true
 
 # Evaluation and logging
 do_eval: true
 eval_strategy: steps
-eval_steps: 200
+eval_steps: 100
 log_level: info
 logging_steps: 5
 logging_strategy: steps
 
 # Output and checkpointing
-output_dir: outputs/qwen3-8b-base-ultrachat-sft-4xh100
-run_name: qwen3-8b-base-ultrachat-sft-4xh100
+output_dir: outputs/qwen3-8b-base-sft-hh-harmless-4xh100
+run_name: qwen3-8b-base-sft-hh-harmless-4xh100
 overwrite_output_dir: true
 save_strategy: "no"
+save_steps: 1000000
+save_total_limit: 1
 
 # Hub and reporting
 push_to_hub: false
-hub_model_id: qwen3-8b-base-ultrachat-sft-4xh100
+hub_model_id: qwen3-8b-base-sft-hh-harmless-4xh100
+hub_strategy: end
 report_to:
   - wandb
